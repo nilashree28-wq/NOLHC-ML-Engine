@@ -308,11 +308,21 @@ OUTPUT_COLUMN_ORDER: List[str] = [
 _INPUT_SET: FrozenSet[str] = frozenset(TRAINING_COLUMN_ORDER)
 _OUTPUT_SET: FrozenSet[str] = frozenset(OUTPUT_COLUMN_ORDER)
 
+# Spec §4.1 — Phase 1 = first 101 targets; remaining 35 are Phase 2 (EU / placeholder).
+PHASE_1_OUTPUT_COUNT: int = 101
+PHASE_2_OUTPUT_COUNT: int = 35
+
+
+def output_phase_index(idx: int) -> int:
+    """1-based output index position ``idx`` (0..135) → phase 1 or 2."""
+    return 1 if idx < PHASE_1_OUTPUT_COUNT else 2
+
 
 def validate_column_lists() -> None:
     """Assert invariants; call at import in tests or data_loader."""
     assert len(TRAINING_COLUMN_ORDER) == 153
     assert len(OUTPUT_COLUMN_ORDER) == 136
+    assert PHASE_1_OUTPUT_COUNT + PHASE_2_OUTPUT_COUNT == len(OUTPUT_COLUMN_ORDER)
     assert len(_INPUT_SET) == 153
     assert len(_OUTPUT_SET) == 136
     assert not (_INPUT_SET & _OUTPUT_SET)

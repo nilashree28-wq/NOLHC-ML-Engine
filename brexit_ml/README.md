@@ -31,11 +31,17 @@ python -c "from data_loader import load_xlsx, save_processed_parquet; from pathl
 
 Or import `prepare_training_frames` for tests. Column names are defined in `src/training_columns.py` (generated from `docs/ml/spec/brexit_ml_engine_spec.md`).
 
-## Train (after Task 5 exists)
+## Train (Task 5)
+
+Requires **XGBoost** with a working OpenMP runtime (on Apple Silicon / macOS: `brew install libomp` if import fails).
 
 ```bash
 python src/train.py
+# or reload from xlsx instead of cached parquet:
+python src/train.py --reload-xlsx
 ```
+
+Writes `models/v1/scaler_X.pkl`, per-output `model_*.pkl` / `classifier_*.pkl`, and `registry.json`. Phase 2 targets (35) are registered as `not_trained` without fitting.
 
 ## Run API
 
