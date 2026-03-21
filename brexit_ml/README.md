@@ -19,7 +19,19 @@ pip install -r requirements.txt
 
 Optional: `export PYTHONPATH=src` is not required when using `main.py` (it prepends `src/`) or when running pytest (see `pyproject.toml`).
 
-## Train (after Tasks 3–5 exist)
+## Data loading (Task 3)
+
+With `data/raw/completed_runs.xlsx` in place:
+
+```bash
+python -c "from data_loader import load_xlsx, save_processed_parquet; from pathlib import Path; \
+  X,Y = load_xlsx('data/raw/completed_runs.xlsx'); \
+  save_processed_parquet(X, Y, Path('data/processed'))"
+```
+
+Or import `prepare_training_frames` for tests. Column names are defined in `src/training_columns.py` (generated from `docs/ml/spec/brexit_ml_engine_spec.md`).
+
+## Train (after Task 5 exists)
 
 ```bash
 python src/train.py
