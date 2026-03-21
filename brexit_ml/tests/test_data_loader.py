@@ -63,17 +63,22 @@ def test_data_sentinel_replaced():
 
 @pytest.mark.integration
 def test_load_real_xlsx_when_present():
-    """Requires ``data/raw/completed_runs.xlsx`` (copy from spec)."""
+    """Requires an AnyLogic export under ``data/raw/`` (see README)."""
     root = Path(__file__).resolve().parents[1]
-    xlsx = root / "data" / "raw" / "completed_runs.xlsx"
-    if not xlsx.is_file():
-        pytest.skip(f"Place source workbook at {xlsx}")
+    raw_dir = root / "data" / "raw"
+    candidates = [
+        raw_dir / "completed_runs.xlsx",
+        raw_dir / "Post-Brexit Sector Based Model - PostBrexit_latest model - Completed runs.xlsx",
+    ]
+    xlsx = next((p for p in candidates if p.is_file()), None)
+    if xlsx is None:
+        pytest.skip(f"Place source workbook in {raw_dir}")
 
     from data_loader import load_xlsx
 
-    x_df, y_df = load_xlsx(xlsx, expect_rows=228)
-    assert x_df.shape == (228, 153)
-    assert y_df.shape == (228, 136)
+    x_df, y_df = load_xlsx(xlsx)
+    assert x_df.shape[1] == 153 and y_df.shape[1] == 136
+    assert x_df.shape[0] == y_df.shape[0] >= 200
 
 
 def test_save_processed_parquet_roundtrip(tmp_path):

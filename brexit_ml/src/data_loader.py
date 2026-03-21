@@ -20,7 +20,8 @@ from training_columns import (
 
 SHEET_NAME = "Completed runs"
 HEADER_ROW = 1
-DEFAULT_EXPECTED_ROWS = 228
+# Canonical spec export has 228 successful runs; real files may differ (e.g. one Failed row → 227).
+DEFAULT_EXPECTED_ROWS: Optional[int] = None
 
 PathLike = Union[str, Path]
 

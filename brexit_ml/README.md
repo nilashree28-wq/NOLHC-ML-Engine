@@ -5,7 +5,7 @@ Surrogate ML service for the IRE ↔ GB East/West corridor per `docs/ml/spec/bre
 ## Prerequisites
 
 - Python 3.10+ (spec). If your default `python3` is older, create the venv with a newer interpreter, e.g. `python3.12 -m venv .venv`.
-- Source workbook: copy `Post-Brexit_Sector_Based_Model_-_PostBrexit_latest_model_-_Completed_runs__2_.xlsx` to `data/raw/completed_runs.xlsx` (see spec).
+- Source workbook: place the AnyLogic export under `data/raw/`. The default path is `data/raw/completed_runs.xlsx`; if you keep the original filename (e.g. `Post-Brexit Sector Based Model - PostBrexit_latest model - Completed runs.xlsx`), pass it explicitly: `--xlsx "data/raw/Post-Brexit Sector Based Model - PostBrexit_latest model - Completed runs.xlsx"`.
 
 ## Setup
 
