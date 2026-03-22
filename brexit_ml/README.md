@@ -43,11 +43,13 @@ python src/train.py --reload-xlsx
 
 Writes `models/v1/scaler_X.pkl`, per-output `model_*.pkl` / `classifier_*.pkl`, and `registry.json`. Phase 2 targets (35) are registered as `not_trained` without fitting.
 
-## Run API
+## Run API (Task 7)
 
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
+
+Raw ML routes: `GET /health`, `POST /predict`, `POST /predict/selective`, `GET /outputs`, `GET /inputs` (see spec §21). Without `models/v1/`, `/health` returns **503** `model_not_ready`.
 
 Check: `GET http://localhost:8000/health`
 
