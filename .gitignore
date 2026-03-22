@@ -13,7 +13,11 @@ build/
 
 # Local data & trained artifacts
 brexit_ml/data/raw/*.xlsx
+brexit_ml/data/processed/*.parquet
 brexit_ml/models/
+
+# Cursor / local tooling
+.cursor/
 
 # Env
 .env
@@ -22,3 +26,5 @@ brexit_ml/models/
 # IDE
 .idea/
 .vscode/
+*.swp
+.DS_Store

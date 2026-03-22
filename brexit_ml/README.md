@@ -43,13 +43,21 @@ python src/train.py --reload-xlsx
 
 Writes `models/v1/scaler_X.pkl`, per-output `model_*.pkl` / `classifier_*.pkl`, and `registry.json`. Phase 2 targets (35) are registered as `not_trained` without fitting.
 
-## Run API (Task 7)
+## Run API (raw + semantic)
+
+From `brexit_ml/`:
 
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-Raw ML routes: `GET /health`, `POST /predict`, `POST /predict/selective`, `GET /outputs`, `GET /inputs` (see spec §21). Without `models/v1/`, `/health` returns **503** `model_not_ready`.
+`main.py` mounts the raw ML app and registers semantic routes. **CORS is off by default** (localhost-only); add middleware in `main.py` if a browser UI on another origin needs to call the API.
+
+**Raw** (spec §21): `GET /health`, `POST /predict`, `POST /predict/selective`, `GET /outputs`, `GET /inputs`.
+
+**Semantic** (spec §12): `POST /scenario/predict`, `POST /scenario/validate`, `GET /scenario/options`, `GET /scenario/schema`.
+
+Without `models/v1/`, `/health` and raw predict return **503** `model_not_ready`; `/scenario/options` and `/scenario/schema` still work.
 
 Check: `GET http://localhost:8000/health`
 

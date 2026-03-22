@@ -105,13 +105,22 @@ def _cv_regressor(
     if cv_folds < 2:
         return None, None, None
     try:
+        # sklearn/numpy may emit RuntimeWarning (e.g. nanvar ddof) during CV scoring
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+            warnings.simplefilter("ignore", RuntimeWarning)
             r2 = cross_val_score(model, X, y, cv=cv_folds, scoring="r2")
             mae = -cross_val_score(
                 model, X, y, cv=cv_folds, scoring="neg_mean_absolute_error"
             )
-        return float(np.nanmean(r2)), float(np.nanstd(r2)), float(np.nanmean(mae))
+            r2_ok = np.asarray(r2, dtype=float)[np.isfinite(r2)]
+            mae_ok = np.asarray(mae, dtype=float)[np.isfinite(mae)]
+            if r2_ok.size == 0:
+                r2_m, r2_s = None, None
+            else:
+                r2_m = float(np.mean(r2_ok))
+                r2_s = float(np.std(r2_ok, ddof=1)) if r2_ok.size >= 2 else None
+            mae_m = float(np.mean(mae_ok)) if mae_ok.size > 0 else None
+        return r2_m, r2_s, mae_m
     except Exception:
         return None, None, None
 

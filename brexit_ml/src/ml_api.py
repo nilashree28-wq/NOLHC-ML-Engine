@@ -87,6 +87,10 @@ def create_app(
     def require_engine() -> Optional[MLEngine]:
         return _engine
 
+    # Exposed for semantic routes (Task 12) and tests
+    app.state.get_engine = require_engine  # type: ignore[attr-defined]
+    app.state.model_version = model_version  # type: ignore[attr-defined]
+
     @app.get("/health")
     def health() -> Any:
         eng = require_engine()
