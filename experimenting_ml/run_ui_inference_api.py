@@ -126,6 +126,16 @@ def _parse_infer_request_body(req: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _clip_target_output(target: str, val: float) -> float:
+    """Apply physical-domain clipping for outputs."""
+    v = float(val)
+    if target.startswith(("TT_", "WT_")):
+        return max(0.0, v)
+    if target.startswith("Uti_"):
+        return _clip(v, 0.0, 1.0)
+    return v
+
+
 def _json_sanitize(obj: Any) -> Any:
     """Recursively convert numpy / pandas scalars so json.dumps never raises."""
     if obj is None:
@@ -508,7 +518,8 @@ class InferenceEngine:
         x_scaled = self.scaler.transform(x_row)
         out: Dict[str, float] = {}
         for target, model in self.selected_models.items():
-            out[target] = self._predict_target(target, model, x_row, x_scaled)
+            raw = self._predict_target(target, model, x_row, x_scaled)
+            out[target] = _clip_target_output(target, raw)
         return out
 
     def _monte_carlo(
@@ -642,8 +653,8 @@ class InferenceEngine:
                 if target not in trend:
                     trend[target] = {"point": [], "lower": [], "upper": []}
                 trend[target]["point"].append(float(y))
-                trend[target]["lower"].append(float(y - q))
-                trend[target]["upper"].append(float(y + q))
+                trend[target]["lower"].append(float(_clip_target_output(target, y - q)))
+                trend[target]["upper"].append(float(_clip_target_output(target, y + q)))
         return trend
 
     def infer(
@@ -686,19 +697,25 @@ class InferenceEngine:
             targets_to_run = [(t, m) for t, m in targets_to_run if t in want]
         preds: Dict[str, Any] = {}
         for target, model in targets_to_run:
-            y = self._predict_target(target, model, x_row, x_scaled)
-            y0 = self._predict_target(target, model, base_row, base_scaled)
+            raw_y = self._predict_target(target, model, x_row, x_scaled)
+            raw_y0 = self._predict_target(target, model, base_row, base_scaled)
+            y = _clip_target_output(target, raw_y)
+            y0 = _clip_target_output(target, raw_y0)
+            clipped = (y != raw_y) or (y0 != raw_y0)
 
             conf = (self.conformal.get(target, {}) or {}).get(model, {})
             q = float(conf.get("quantile", 0.0))
+            lower = _clip_target_output(target, y - q)
+            upper = _clip_target_output(target, y + q)
             preds[target] = {
                 "model": model,
                 "prediction": y,
                 "baseline_prediction": y0,
                 "delta_vs_baseline": y - y0,
-                "interval": {"lower": y - q, "upper": y + q, "width": 2.0 * q},
+                "interval": {"lower": lower, "upper": upper, "width": max(0.0, upper - lower)},
                 "coverage_level": float(conf.get("coverage_level", 0.9)),
                 "empirical_coverage": float(conf.get("empirical_coverage", 0.0)),
+                "clipped_to_domain": bool(clipped),
             }
         mc = self._monte_carlo(
             family,

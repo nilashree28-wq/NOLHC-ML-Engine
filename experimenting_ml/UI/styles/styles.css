@@ -183,7 +183,33 @@ input:focus, select:focus, textarea:focus { border-color: var(--teal); }
 input::placeholder, textarea::placeholder { color: var(--slate-600); }
 select option { background: var(--slate-800); }
 textarea      { resize: vertical; min-height: 80px; max-height: 200px; }
+.form-range-slider {
+  width: 100%;
+  margin-top: 8px;
+  accent-color: #2dd4bf;
+}
 .hint-text    { font-size: 10px; color: var(--teal-light); margin-top: 4px; }
+.field-lock-note {
+  margin-top: 4px;
+  font-size: 10px;
+  color: #f59e0b;
+}
+.form-field--locked {
+  opacity: 0.82;
+}
+.form-field--locked .form-input-shell input {
+  cursor: not-allowed;
+  background: rgba(30, 41, 59, 0.35);
+}
+.scenario-policy-note {
+  margin: 8px 0 14px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(45, 212, 191, 0.25);
+  background: rgba(13, 148, 136, 0.12);
+  color: var(--slate-300);
+  font-size: 11px;
+}
 
 /* Remaining `type="number"` fields: no spinners (desktop); tonnes uses `type="text"` + inputmode. */
 input[type="number"]::-webkit-outer-spin-button,
@@ -502,7 +528,7 @@ input[type="number"] {
   font-size: 10px; font-weight: 600; color: var(--slate-500);
   text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px;
 }
-.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+.kpi-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .kpi-card {
   border-radius: var(--radius-md); border: 1px solid; padding: 14px;
   display: flex; gap: 10px; align-items: flex-start;
@@ -1408,6 +1434,12 @@ input[type="number"] {
 }
  .scenario-llm-item strong {
   color: var(--slate-100);
+}
+
+@media (max-width: 1280px) {
+  .kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 /* ── RESPONSIVE ───────────────────────────────────────────── */

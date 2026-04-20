@@ -15,6 +15,7 @@ import {
 import {
   CONFIG_STORAGE_KEY,
   PARAMETER_META,
+  PARAMETER_LABELS,
   formatRangeLabel,
   loadSavedConfig,
   saveConfigToStorage,
@@ -102,6 +103,73 @@ const IC = {
   spsOfficer: "🏥",
   border: "🛂",
 };
+
+const DIRECT_ROUTE_EDITABLE_KEYS = new Set([
+  "NA_Im_LB",
+  "NA_Im_DR",
+  "NA_Ex_LB",
+  "NA_Ex_DR",
+  "A_Im_LB",
+  "A_Im_DR",
+  "A_Ex_LB",
+  "A_Ex_DR",
+  "ChkTime_Doc",
+  "ChkTime_Phy",
+  "NumCusShed_D",
+  "NumDAFM_D",
+  "NumCusShed_R",
+  "NumDAFM_R",
+  "Pct_NA_OB_Green",
+  "Pct_NA_OB_Red",
+  "Pct_A_OB_Red",
+  "Pct_NA_IB_Green",
+  "Pct_NA_IB_Red",
+  "Pct_A_IB_Red",
+  "Pct_IB_PreBoard",
+  "Pct_OB_PreBoard",
+]);
+
+const NON_TARIFF_EDITABLE_KEYS = new Set([
+  "NA_Im_LB",
+  "NA_Ex_LB",
+  "A_Im_LB",
+  "A_Ex_LB",
+  "ChkTime_Doc",
+  "ChkTime_Phy",
+  "NumCusShed_D",
+  "NumDAFM_D",
+  "NumCusShed_R",
+  "NumDAFM_R",
+  "Pct_NA_OB_Green",
+  "Pct_NA_OB_Red",
+  "Pct_A_OB_Red",
+  "Pct_NA_IB_Green",
+  "Pct_NA_IB_Red",
+  "Pct_A_IB_Red",
+  "Pct_IB_PreBoard",
+  "Pct_OB_PreBoard",
+]);
+
+const SCENARIO_EDITABLE_KEYS = {
+  direct_route: DIRECT_ROUTE_EDITABLE_KEYS,
+  non_tariff: NON_TARIFF_EDITABLE_KEYS,
+};
+
+function isEditableByScenarioPolicy(apiKey, familyId = scenarioUiState.familyId) {
+  const allow = SCENARIO_EDITABLE_KEYS[familyId];
+  if (!allow) return true;
+  return allow.has(apiKey);
+}
+
+function lockedReasonForScenarioPolicy(familyId = scenarioUiState.familyId) {
+  if (familyId === "direct_route") {
+    return "Locked in Direct Route scenario policy (mentor mapping).";
+  }
+  if (familyId === "non_tariff") {
+    return "Locked in Non-Tariff scenario policy (mentor mapping).";
+  }
+  return "Locked by current scenario policy.";
+}
 
 let formFieldStagger = 0;
 
@@ -269,13 +337,47 @@ function normalizeInferToSimulatorResult(preds) {
     out[slug] = {
       value: val,
       unit: meta.fraction ? "fraction" : "hours",
-      status: "ok",
+      status: row.clipped_to_domain ? "clipped_to_domain" : "ok",
       r2: null,
       registered_as: String(row.model || ""),
       mae: 0,
     };
   }
   return out;
+}
+
+function inputRealismSummary() {
+  const outOfRange = [];
+  const nearEdge = [];
+  for (const [k, m] of Object.entries(PARAMETER_META)) {
+    const v = Number(state.config[k]);
+    if (!Number.isFinite(v)) continue;
+    if (v < m.min || v > m.max) {
+      outOfRange.push(`${k} (${v.toFixed(2)})`);
+      continue;
+    }
+    const span = m.max - m.min;
+    if (span <= 0) continue;
+    const edgePct = Math.min((v - m.min) / span, (m.max - v) / span);
+    if (edgePct < 0.05) nearEdge.push(k);
+  }
+  const risk = outOfRange.length ? "high" : nearEdge.length > 6 ? "medium" : "low";
+  return { outOfRange, nearEdge, risk };
+}
+
+function realismPanel() {
+  const s = inputRealismSummary();
+  const tone = s.risk === "high" ? "amber" : "teal";
+  const lines = [
+    `Calibrated range check: ${s.outOfRange.length ? "Out-of-range inputs detected" : "All inputs in allowed bounds"}`,
+    `Near-edge inputs (<= 5% from min/max): ${s.nearEdge.length}`,
+  ];
+  if (s.outOfRange.length) lines.push(`Out-of-range keys: ${s.outOfRange.slice(0, 6).join(", ")}`);
+  return SectionCard(
+    "Input realism checks",
+    tone,
+    el("div", { class: "scenario-llm-panel" }, ...lines.map((t) => el("div", { class: "scenario-llm-item" }, t))),
+  );
 }
 
 function buildPredictBody() {
@@ -374,6 +476,8 @@ function bindNumber(apiKey, opts) {
     isPercent = false,
     fieldIcon = null,
   } = opts;
+  const lockedByPolicy = !isEditableByScenarioPolicy(apiKey);
+  const lockReason = lockedByPolicy ? lockedReasonForScenarioPolicy() : null;
 
   const m = PARAMETER_META[apiKey];
   const min = m != null ? (isPercent ? m.min * 100 : m.min) : optMin ?? 0;
@@ -401,7 +505,10 @@ function bindNumber(apiKey, opts) {
     usePlainText,
     fieldIcon,
     staggerMs,
+    disabled: lockedByPolicy,
+    slider: true,
     onChange: (v) => {
+      if (lockedByPolicy) return;
       state.config[apiKey] = isPercent ? v / 100 : v;
       if (["NA_Im", "NA_Ex", "A_Im", "A_Ex"].includes(apiKey)) {
         refreshVolumeHints();
@@ -412,6 +519,9 @@ function bindNumber(apiKey, opts) {
       schedulePersistConfig();
     },
   });
+  if (lockReason) {
+    wrap.append(el("div", { class: "field-lock-note" }, `🔒 ${lockReason}`));
+  }
   return wrap;
 }
 
@@ -512,6 +622,16 @@ function buildInputForm() {
     );
   }
   formBody.append(el("div", { class: "scenario-config-block" }, ...mainCfgChildren));
+  const editableKeys = SCENARIO_EDITABLE_KEYS[family.id];
+  if (editableKeys) {
+    formBody.append(
+      el(
+        "div",
+        { class: "scenario-policy-note" },
+        `Scenario policy: ${editableKeys.size} / ${Object.keys(PARAMETER_META).length} parameters are editable in this family.`,
+      ),
+    );
+  }
 
   const g1 = createFactorGroup(
     true,
@@ -988,6 +1108,7 @@ function renderResults() {
 
   const badge = confidenceBadgeEl();
   if (badge) right.append(badge);
+  right.append(realismPanel());
 
   const journey = renderNolhcJourneyTimeline(state.lastResult);
   if (journey) right.append(journey);
@@ -1005,8 +1126,10 @@ function renderResults() {
       let theme = meta.theme;
       if (meta.fraction) theme = themeForStaffUtil(pr.value);
       const warn = pr.status === "low_confidence" ? " ⚠" : "";
+      const clippedWarn = pr.status === "clipped_to_domain" ? " (clipped)" : "";
       const subParts = [];
       if (pr.registered_as) subParts.push(`model: ${pr.registered_as}`);
+      if (clippedWarn) subParts.push(clippedWarn);
       if (pr.r2 != null) subParts.push(`R² ${Number(pr.r2).toFixed(2)}`);
       cards.push(
         KpiCard({
@@ -1030,9 +1153,7 @@ function renderResults() {
 
   const scenarioRows = scenarioRowsForCurrentSelection();
   if (scenarioRows.length) {
-    right.append(renderScenarioHeatmapPanel(scenarioRows));
-    right.append(renderScenarioXaiPanel(scenarioRows));
-    right.append(renderScenarioLlmPanel(scenarioRows));
+    right.append(renderScenarioAttributionPanel(scenarioRows));
   }
 
   if (state.hasRun && mapSection) {
@@ -1387,23 +1508,6 @@ function scenarioDriverScores(rows) {
     .slice(0, 6);
 }
 
-function driverHeatmapWeight(driverKey, kpiLabel) {
-  const d = driverKey.toLowerCase();
-  const k = kpiLabel.toLowerCase();
-  if (d.includes("chktime") || d.includes("phychk") || d.includes("idnchk")) {
-    if (k.includes("time")) return 0.9;
-    if (k.includes("util")) return 0.55;
-    return 0.3;
-  }
-  if (d.includes("green")) return k.includes("time") ? 0.35 : 0.25;
-  if (d.includes("vol") || d.includes("via")) {
-    if (k.includes("time")) return 0.5;
-    if (k.includes("util")) return 0.6;
-    return 0.45;
-  }
-  return 0.25;
-}
-
 const HEATMAP_TARGETS = [
   "tt_ib_agri",
   "tt_ob_agri",
@@ -1415,60 +1519,32 @@ const HEATMAP_TARGETS = [
 
 function prettyDriverLabel(driver) {
   const mapped = SCENARIO_TO_CONFIG_MAP[driver.key];
-  if (mapped && PARAMETER_META[mapped]) {
-    return `${PARAMETER_META[mapped].label} (${mapped})`;
+  if (mapped) {
+    const title = PARAMETER_LABELS[mapped] || mapped;
+    return `${title} (${mapped})`;
   }
-  return driver.label || driver.key;
+  return driver.label || driver.key || "Scenario input";
 }
 
-function renderScenarioHeatmapPanel(rows) {
-  const kpis = HEATMAP_TARGETS
-    .map((slug) => ({ slug, label: KPI_META[slug]?.label || slug }))
-    .filter((k) => !!k.label);
-  const top = scenarioDriverScores(rows).slice(0, 5);
-  const grid = el("div", { class: "scenario-heatmap-grid" });
-  grid.append(el("div", { class: "scenario-heatmap-cell corner" }, "Driver / KPI"));
-  kpis.forEach((k) => grid.append(el("div", { class: "scenario-heatmap-cell head" }, k.label)));
-
-  top.forEach((d) => {
-    grid.append(el("div", { class: "scenario-heatmap-cell rowhead" }, prettyDriverLabel(d)));
-    kpis.forEach((k) => {
-      const val = Math.min(
-        1,
-        (Math.abs(d.deltaPct) / 100 + Math.abs(d.delta) / 100) * driverHeatmapWeight(d.key, k.label),
-      );
-      const alpha = 0.12 + val * 0.72;
-      grid.append(
-        el(
-          "div",
-          { class: "scenario-heatmap-cell", style: { background: `rgba(45, 212, 191, ${alpha.toFixed(3)})` } },
-          `${Math.round(val * 100)}%`,
-        ),
-      );
-    });
-  });
-  const wrap = el("div", { class: "scenario-heatmap-wrap" }, grid);
-  return SectionCard("Scenario heatmap (driver influence)", "teal", wrap);
-}
-
-function renderScenarioXaiPanel(rows) {
+function renderScenarioAttributionPanel(rows) {
+  const family = activeScenarioFamily();
+  const top = scenarioDriverScores(rows).slice(0, 6);
   const wrap = el("div", { class: "scenario-xai-list" });
-  scenarioDriverScores(rows).forEach((d) => {
+  top.forEach((d) => {
     const pct = Math.min(100, Math.max(4, Math.round(Math.abs(d.deltaPct))));
     wrap.append(
       el("div", { class: "scenario-xai-row" },
-        el("div", { class: "scenario-xai-label" }, d.label),
+        el("div", { class: "scenario-xai-label" }, prettyDriverLabel(d)),
         el("div", { class: "scenario-xai-bar-bg" }, el("div", { class: "scenario-xai-bar-fill", style: { width: `${pct}%` } })),
         el("div", { class: "scenario-xai-val" }, `${d.delta >= 0 ? "+" : ""}${d.delta.toFixed(2)}`),
       ),
     );
   });
-  return SectionCard("XAI explanation (top scenario drivers)", "blue", wrap);
-}
-
-function renderScenarioLlmPanel(rows) {
-  const family = activeScenarioFamily();
-  const top = scenarioDriverScores(rows).slice(0, 3);
+  const topModels = Object.entries(state.lastResult || {})
+    .map(([slug, row]) => ({ slug, model: row?.registered_as, label: KPI_META[slug]?.label || slug }))
+    .filter((x) => !!x.model)
+    .slice(0, 4)
+    .map((x) => `${x.label} -> ${x.model}`);
   const outputFocus = HEATMAP_TARGETS.map((slug) => KPI_META[slug]?.label).filter(Boolean).join("; ");
   const msg =
     top.length === 0
@@ -1484,8 +1560,14 @@ function renderScenarioLlmPanel(rows) {
     el("div", { class: "scenario-llm-item" }, el("strong", {}, "Summary: "), msg),
     el("div", { class: "scenario-llm-item" }, el("strong", {}, "Risk: "), risk),
     el("div", { class: "scenario-llm-item" }, el("strong", {}, "Suggested action: "), act),
+    el(
+      "div",
+      { class: "scenario-llm-item" },
+      el("strong", {}, "Model attribution: "),
+      topModels.length ? topModels.join(" | ") : "No model metadata available in this run.",
+    ),
   );
-  return SectionCard("LLM explanation", "amber", panel);
+  return SectionCard("XAI + LLM attribution", "blue", wrap, panel);
 }
 
 /** Right panel: scenario-first controls sourced from scenario_mapping.xlsx. */
