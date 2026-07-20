@@ -299,7 +299,7 @@ Final Brexit ML Design/
 
 ### 11.2 Typical workflows
 
-The full project structure described below is published in an open GitHub repository so that mentors and assessors can clone the codebase and reproduce the local workflows, evaluation artefacts, and UI demos: **[https://github.com/[YourUsername]/[YourRepoName]](https://github.com/[YourUsername]/[YourRepoName])**. Replace this link with the final public repository URL once the push is complete. Following the steps in this section on a fresh clone should be enough to reinstall dependencies and regenerate the results summarised in this report.
+The full project structure described below is published in an open GitHub repository so that mentors and assessors can clone the codebase and reproduce the local workflows, evaluation artefacts, and UI demos: **[https://github.com/nilashree28-wq/NOLHC-ML-Engine](https://github.com/nilashree28-wq/NOLHC-ML-Engine)**. Following the steps in this section on a fresh clone should be enough to reinstall dependencies and regenerate the results summarised in this report.
 
 **A. Run the NOLHC API + parameter UI**
 
