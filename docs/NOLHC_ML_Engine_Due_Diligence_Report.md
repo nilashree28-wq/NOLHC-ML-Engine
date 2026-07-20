@@ -102,6 +102,10 @@ Data loader → X (129×35), Y (129×20) parquet
               Browser UI (Leaflet map + KPI panels)
 ```
 
+**Figure 1.** End-to-end AnyLogic NOLHC surrogate pipeline (data ingestion → training / evaluation & SHAP → inference API and browser UI, with scenario mapping as a runtime override).
+
+![Figure 1. AnyLogic NOLHC Surrogate Pipeline](figures/nolhc_surrogate_pipeline_white.png)
+
 ### 5.2 Modelling approach
 
 For each of the 20 KPIs the pipeline benchmarks a broad candidate set (Gaussian Process variants, tree ensembles including Random Forest / Extra Trees / Gradient Boosting / XGBoost / LightGBM / CatBoost, SVR, polynomial pipelines, linear/penalised models, KNN, MLP, AdaBoost). Selection uses cross-validation on the training pool. In `nolhc_ml`, a stacking ensemble is compared with the best single model and the stronger of the two is registered.
