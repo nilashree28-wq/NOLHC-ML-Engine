@@ -1,0 +1,63 @@
+% =============================================================================
+% Experimental pipeline (5-step narrative) — include from main.tex via \input{}
+% Requires in preamble: \usepackage{tikz} \usetikzlibrary{positioning,arrows.meta}
+%   \usepackage{algorithm} \usepackage{algpseudocode}
+% TikZ box style uses fill=black!20 (not black!2 — truncated mix breaks parsing).
+% Expects macros: \train, \test, \R (from main.tex)
+% =============================================================================
+
+% Included from Appendix~\ref{app:workflow}; no \subsection here (parent owns structure).
+\label{sec:pipeline}
+
+Figure~\ref{fig:pipeline} summarises the end-to-end learning protocol for \emph{multi-output regression}; subsections below specify learners, comparison tests, explainability, and deployment.
+All targets are continuous KPIs scored with RMSE, MAE, and $R^2$ (no classification metrics).
+
+\begin{figure}[t]
+  \centering
+  \begin{tikzpicture}[
+    node distance=0.28cm,
+    box/.style={
+      rectangle, draw=black!70, rounded corners=1.5pt,
+      align=center, font=\scriptsize, inner sep=2.5pt,
+      minimum width=0.94\columnwidth, fill=black!20
+    },
+    arr/.style={-{Stealth[length=1.8pt]}, semithick, draw=black!65}
+  ]
+    \node[box] (s1) {\textbf{1.} Train--hold-out split\\
+      permute indices; fit scalers on $\train$ only};
+    \node[box, below=of s1] (s2) {\textbf{2.} Surrogate zoo\\
+      19 tuned families $\times$ $K$ targets; RMSE objective};
+    \node[box, below=of s2] (s3) {\textbf{3.} Hyperparameter search\\
+      \texttt{ParameterGrid}; repeated 10-fold CV on $\train$};
+    \node[box, below=of s3] (s4) {\textbf{4.} Statistical comparison\\
+      paired $t$-tests; Friedman/Nemenyi; composite score};
+    \node[box, below=of s4] (s5) {\textbf{5.} Sign-off \& deployment\\
+      SHAP; conformal bands; retrain; FastAPI inference};
+    \draw[arr] (s1) -- (s2);
+    \draw[arr] (s2) -- (s3);
+    \draw[arr] (s3) -- (s4);
+    \draw[arr] (s4) -- (s5);
+  \end{tikzpicture}
+  \caption{Five-stage learning and deployment protocol for multi-output surrogate regression. Hold-out indices $\test$ are excluded from cross-validation, tuning, and model choice until final sign-off; step~5 serves the Decision Intelligence UI.}
+  \label{fig:pipeline}
+\end{figure}
+
+\begin{algorithm}[t]
+  \caption{Repeated CV hyperparameter search for one target $k$ (train pool only)}
+  \label{alg:cv-target}
+  \begin{algorithmic}[1]
+    \Require $\{(\mathbf{x}_i, y_{i,k})\}_{i \in \train}$, model zoo $\mathcal{M}$ ($|\mathcal{M}|{=}19$), grids $\{\mathcal{G}_m\}$
+    \Ensure Best $(m^\star, \theta^\star)$ minimising mean CV RMSE (tie: lower std)
+    \State Fit scaler $s$ on $\mathbf{X}_{\mathrm{tr}}$ \Comment{\texttt{StandardScaler}; trees skip scaling}
+    \For{each model $m \in \mathcal{M}$}
+      \For{each $\theta \in \mathcal{G}_m$}
+        \For{each repeat $r \in \{1,\ldots,R\}$, CV fold $f$ on $\train$}
+          \State Fit $m_\theta$ on $\train \setminus F_f$; record validation $\mathrm{RMSE}_{f,r}$
+        \EndFor
+        \State $\overline{\mathrm{RMSE}}_{m,\theta} \leftarrow \mathrm{mean}_{f,r}(\mathrm{RMSE})$; $\sigma_{m,\theta} \leftarrow \mathrm{std}_{f,r}$
+      \EndFor
+      \State $(m^\star_k, \theta^\star_k) \leftarrow \arg\min_{m,\theta} \overline{\mathrm{RMSE}}_{m,\theta}$ with $\sigma$ tie-break
+    \EndFor
+    \State \Return fold RMSE vectors for paired $t$-tests vs.\ other models
+  \end{algorithmic}
+\end{algorithm}

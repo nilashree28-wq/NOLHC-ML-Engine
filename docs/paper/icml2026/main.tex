@@ -1,0 +1,546 @@
+% =============================================================================
+% ICML-format research paper — Group 18 (NOLHC Brexit ML Decision Intelligence)
+% =============================================================================
+%
+% SUBMISSION MODE:
+%   1. Download official ICML style from the conference website (icml2026.sty, etc.)
+%   2. Place style files in this directory
+%   3. Comment out the DRAFT block below and uncomment the ICML block
+%
+% DRAFT MODE (default): compiles without icml2026.sty using standard article class
+% =============================================================================
+
+% --- DRAFT (compiles now) ---
+\documentclass[10pt,twocolumn]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{times}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta}
+\usepackage{algorithm}
+% algpseudocode (algorithmicx) conflicts with legacy \usepackage{algorithmic}
+% (e.g. if icml2026.sty loads it). Undefine before loading algpseudocode.
+\let\algorithmic\relax
+\let\endalgorithmic\relax
+\usepackage{algpseudocode}
+\usepackage{natbib}
+\bibliographystyle{plainnat}
+
+% --- ICML SUBMISSION (uncomment when icml2026.sty is available) ---
+% \documentclass{article}
+% \usepackage[accepted]{icml2026}
+% \usepackage{amsmath,amssymb}
+% \usepackage{graphicx}
+% \usepackage{booktabs}
+% \usepackage{hyperref}
+% \usepackage{tikz}
+% \usetikzlibrary{positioning,arrows.meta}
+% \usepackage{algorithm}
+% \let\algorithmic\relax
+% \let\endalgorithmic\relax
+% \usepackage{algpseudocode}
+% \usepackage{natbib}
+% \bibliographystyle{icml2026}
+
+% Shared macros (no \vx — use \mathbf{x} to avoid undefined control sequences)
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\train}{\mathcal{I}_{\mathrm{tr}}}
+\newcommand{\test}{\mathcal{I}_{\mathrm{te}}}
+
+\title{Surrogate Modelling and Decision Intelligence for Post-Brexit\\RoRo Logistics: A Multi-Output NOLHC Pipeline with Explainable UI}
+
+\author{%
+  \begin{tabular}{c}
+    Thu Thao Le \quad Hemant Kumar Ganesen \quad Inyanila Gnanasekar \\
+    Sakshi Jivan Dhamane \quad Uthara Prarath \\[0.4em]
+    \textit{MI6228 Analytics Live (Group 18)} \\
+    Mentor: Amr Mahfouz
+  \end{tabular}%
+}
+
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Post-Brexit customs, sanitary/phytosanitary (SPS) checks, and route choice (landbridge vs.\ direct EU sailings) complicate roll-on/roll-off (RoRo) logistics between Ireland, Great Britain, and the EU.
+AnyLogic Cloud simulation supports credible what-if analysis but imposes high adoption friction (${\sim}$157 parameters, ${\sim}$EUR\,2{,}520 annual API subscription) for non-expert managers.
+We learn \emph{surrogate regressors} from a Nearly Orthogonal Latin Hypercube (NOLHC) design ($n{=}129$, $d{=}35$, $K{=}20$) and deploy a human-on-the-loop \emph{Decision Intelligence} web UI with millisecond inference.
+The pipeline uses an 80/20 train--hold-out split, repeated 10-fold CV on the training pool only, paired $t$-tests and Friedman/Nemenyi diagnostics across 19 model families, SHAP explainability before final sign-off, and conformal-style uncertainty bands.
+Hold-out validation improves over mean/OLS baselines on 19/20 targets (exception: \texttt{WT\_IB\_NA\_Ross}, $-0.6\%$), with largest gains on agri transit-time KPIs (${\sim}$74--79\% RMSE reduction).
+We discuss small-$n$ extrapolation risk, non-causal SHAP, and governance constraints for mentor and port-stakeholder review.
+\end{abstract}
+
+% -----------------------------------------------------------------------------
+\section{Introduction}
+\label{sec:intro}
+
+Brexit shifted Irish agri-food logistics from barrier-free movement to a high-intervention border regime with mandatory customs and SPS protocols, increasing delivery times and administrative burden \citep{mahfouz2019,brexitlegal_sps,mahfouz2020}.
+When the UK landbridge incurs delays and border friction, operators redirect capacity to direct maritime corridors (e.g.\ Rosslare--Cherbourg), changing the feasible set of route and staffing policies \citep{copenhagen2018,ivanov2025}.
+
+Stakeholders must evaluate post-Brexit models under varying border-control and staffing assumptions at Dublin and Rosslare---comparing landbridge vs.\ direct EU routes while tracking KPIs (transit times, waiting times, customs/DAFM utilisation, queue lengths).
+Agent-based simulation (AnyLogic) remains the ground-truth engine but is ill-suited to iterative workshops: the cloud model exposes ${\sim}$157 inputs, and API access carries substantial subscription cost; practitioners without deep simulation expertise struggle to set inspection rates and resource allocations \citep{byrne2009,amroune2019}.
+
+We propose an ML-driven web UI trained on NOLHC simulation runs \citep{cioppa2007,viana2016,bogoclu2021}, delivering near real-time KPI prediction with reduced parameter complexity.
+The system follows a \emph{human-on-the-loop} protocol: surrogates accelerate ``if-then'' exploration while domain experts retain authority over scenario assumptions and metric interpretation.
+
+\paragraph{Mentor expectations.}
+The delivered prototype must (i) visualise simulation outcomes for non-experts, (ii) provide hold-out-validated surrogates per KPI, (iii) quantify uncertainty via interval outputs, and (iv) communicate drivers via SHAP and persona-based attribution in the UI decision layer.
+
+A credible artifact additionally requires:
+(i) rigorous model comparison and held-out evaluation,
+(ii) explainability tied to the selected model per output,
+(iii) scenario governance preventing implausible inputs, and
+(iv) reproducible packaging for independent review.
+
+\paragraph{Contributions.}
+\begin{itemize}
+  \item We formulate multi-output post-Brexit RoRo logistics prediction as supervised learning from a 129-run NOLHC design with explicit output-domain constraints at deployment.
+  \item We implement an end-to-end experimental protocol: repeated CV on the training pool only, paired $t$-tests on matched fold errors, mentor-requested Friedman/Nemenyi diagnostics, pre-conformal checkpoints, SHAP before final hold-out sign-off, and composite model selection for reporting.
+  \item We deliver an integrated \textbf{Decision Intelligence} web UI with scenario policy locks, real-time inference, SHAP driver panels with per-target selection across all 20 outputs, and reliability guardrails (clipping, input realism checks).
+\end{itemize}
+
+% -----------------------------------------------------------------------------
+\section{Problem Setup}
+\label{sec:setup}
+
+We consider simulation-generated data $\{(\mathbf{x}_i, \mathbf{y}_i)\}_{i=1}^{n}$ with $\mathbf{x}_i \in \R^{d}$, $\mathbf{y}_i \in \R^{K}$, $n{=}129$, $d{=}35$, $K{=}20$.
+Each coordinate of $\mathbf{y}_i$ is a continuous operational KPI (hours for transit/wait metrics; fractions in $[0,1]$ for utilisation).
+
+\paragraph{Inputs.}
+Features include trade volumes (tonnes), landbridge/direct route volumes, vessel capacities, check times, resource counts (customs sheds, DAFM bays), and route-mix fractions (green/red/pre-boarding shares).
+
+\paragraph{Outputs.}
+Targets span agri/non-agri waiting and transit times, landbridge and direct-route performance, and customs/DAFM utilisation at Dublin and Rosslare (see project crosswalk tables).
+
+\paragraph{Surrogate objective.}
+For each $k \in \{1,\ldots,K\}$, learn $f_k : \R^{d} \rightarrow \R$ minimising out-of-sample error.
+We use RMSE as the primary selection metric; tie-break on CV fold RMSE standard deviation for stability.
+
+\paragraph{Domain constraints at deployment.}
+Let $\Pi_k$ denote projection to feasible ranges (e.g.\ non-negative times, utilisation in $[0,1]$).
+Deployed predictions are $\tilde{y}_{i,k} = \Pi_k(f_k(\mathbf{x}_i))$, with UI indication when clipping occurs.
+
+\paragraph{Explainability.}
+For selected $(k, f_k)$, we report global mean $|\mathrm{SHAP}|$ feature rankings \citep{lundberg2017shap} for governance review; we do \emph{not} claim causal identification of interventions.
+
+% -----------------------------------------------------------------------------
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{Post-Brexit logistics simulation.}
+\citet{mahfouz2019} and \citet{mahfouz2020} model post-Brexit agri-fresh and Irish freight corridors; \citet{copenhagen2018} quantify trade-route shifts away from the UK landbridge.
+Agent-based and hybrid simulation remain the credibility layer for border and port KPIs \citep{ivanov2025,byrne2009,amroune2019}.
+
+\paragraph{Computer experiments and surrogates.}
+Gaussian-process emulators and design-based metamodels are standard for expensive simulators \citep{santner2003design,forrester2008,kleijnen2015}.
+Nearly orthogonal Latin hypercube designs improve space-filling coverage at modest run budgets \citep{cioppa2007,viana2016,bogoclu2021}.
+Surrogate reviews emphasise bias--variance trade-offs, extrapolation risk, and validation discipline when $n$ is small \citep{razavi2012,simpson2001,bhosekar2018,wang2020surrogate,vabalas2019}.
+Our setting differs in scale ($n{=}129$) and output multiplicity ($K{=}20$), motivating diverse model families rather than a single GP per target.
+
+\paragraph{Gradient boosting and ensembles.}
+Tree boosting and bagging are strong baselines for tabular metamodels \citep{friedman2001gbm,breiman2001random,bentejac2019,chen2016xgboost,ke2017lightgbm}.
+
+\paragraph{Model comparison.}
+We use paired tests on matched CV fold errors and Friedman/Nemenyi-style rankings \citep{demvsar2006statistical,nemenyi1963distribution,jia2025pairwise} following mentor feedback.
+
+\paragraph{Uncertainty and explainability.}
+We report symmetric intervals from residual quantiles with coverage tied to relative test RMSE, building on conformal foundations \citep{vovk2005algorithmic,angelopoulos2023conformal,romano2019cqr}; we treat these as descriptive on the hold-out set rather than formal split-conformal guarantees.
+Global SHAP attributions support governance review without causal claims \citep{lundberg2017shap,salih2023shap}.
+
+\paragraph{Human-in-the-loop decision support.}
+Interactive scenario UIs for logistics are common in operations research \citep{byrne2009}.
+Our contribution couples \emph{auditable} ML selection artifacts with explainability, persona-based narration, and policy-governed inputs in a human-on-the-loop protocol \citep{monarch2021,jiang2024,laato2022,bello2025}.
+
+% -----------------------------------------------------------------------------
+\section{Method}
+\label{sec:method}
+
+We learn \emph{multi-output surrogates} mapping simulator inputs to logistics KPIs with auditable model choice and millisecond inference.
+Design and variable groups are in \S\ref{sec:experiments} (Appendix~\ref{app:supp}); dataset counts are omitted here.
+For each target $k$, we estimate $f_k$ on $\train$, rank families by repeated CV and nonparametric tests, explain the pre-test composite winner with SHAP, and deploy $(f_1,\ldots,f_K)$ with projection $\Pi_k$ and uncertainty bands.
+A single reproducible run fits scalers, logs fold-wise RMSE, exports \texttt{.joblib} artefacts, and feeds the Decision Intelligence UI.
+Figure~\ref{fig:pipeline} and Algorithm~\ref{alg:cv-target} (Appendix~\ref{app:workflow}) summarise the workflow.
+
+\subsection{Problem formulation and I/O}
+\label{sec:method-io}
+
+The \emph{input} is design matrix $\mathbf{X} \in \R^{n \times d}$ with rows $\mathbf{x}_i \in \R^d$ and multi-target matrix $\mathbf{Y} \in \R^{n \times K}$ with entries $y_{i,k}$.
+For target $k$, we extract $\mathbf{y}^{(k)} = (y_{1,k},\ldots,y_{n,k})^\top$ and fit learner $f_k(\cdot;\theta)$ from family $m \in \mathcal{M}$ with hyperparameters $\theta \in \mathcal{G}_m$, predicting $\hat{y}_{i,k} = f_k(\mathbf{x}_i;\theta)$ on held-out indices.
+At deployment, scenario $\mathbf{x}_\star$ yields $\tilde{y}_{\star,k} = \Pi_k(f_k(\mathbf{x}_\star))$ where $\Pi_k$ clips or bounds predictions to simulator-feasible ranges (\S\ref{sec:setup}).
+We fit \emph{one surrogate per KPI} rather than a joint vector regressor: each $f_k$ is selected and tuned independently while sharing $\mathbf{X}$, which avoids forcing a single hypothesis class across heterogeneous targets (transit hours vs.\ unitless utilisation) and isolates failure modes to one KPI.
+The multi-output map is therefore a tuple $(f_1,\ldots,f_K)$ of regressors, not a single shared representation layer.
+Crosswalks map feature indices to domain labels for SHAP and the UI without altering $\mathbf{X}$.
+On validation $\mathcal{V}$, $\mathrm{RMSE}_k = \sqrt{|\mathcal{V}|^{-1}\sum_{i \in \mathcal{V}} (y_{i,k} - \hat{y}_{i,k})^2}$ is the primary tuning objective; MAE and $R^2$ on $\test$ complement RMSE for skewed wait-time KPIs.
+Hyperparameter search minimises mean CV RMSE across $30$ fold scores, tie-breaking on lower fold-wise RMSE standard deviation when means tie.
+
+\subsection{Training protocol and hyperparameter search}
+\label{sec:method-protocol}
+
+Indices are permuted once (\texttt{random\_state=42}; \texttt{split\_meta.json}) into $\train$ and $\test$ (sizes in Appendix~\ref{app:supp}).
+$\test$ is excluded from CV, \texttt{ParameterGrid} search, scaler fitting, Friedman/Nemenyi blocks, and \texttt{composite\_pre\_test}; it is used only for final metrics and interval calibration (\S\ref{sec:experiments}).
+All $d$ parameters enter as numeric features without PCA.
+\texttt{StandardScaler} is fit on $\mathbf{X}_{\train}$ for GPR, SVR, polynomial--Ridge, penalised linear models, KNN, MLP, and \texttt{Baseline\_OLS}; trees and CatBoost use raw $\mathbf{x}$.
+\textbf{Repeated 10-fold CV} on $\train$ uses \texttt{RepeatedKFold} with three repeats ($30$ RMSE values per configuration); every $\theta \in \mathcal{G}_m$ is evaluated for each $(k,m)$.
+The winning configuration minimises mean CV RMSE with the stability tie-break above.
+Aligned fold-wise errors support paired $t$-tests and are logged in \texttt{cv\_fold\_details.xlsx} (Algorithm~\ref{alg:cv-target}).
+
+\subsection{Surrogate learners}
+\label{sec:method-learners}
+
+\texttt{Baseline\_Mean} predicts the training mean; \texttt{Baseline\_OLS} is least squares on scaled features---both optional in paired checks, excluded from Friedman blocks over $\mathcal{M}$ ($|\mathcal{M}|{=}19$).
+Each core family has a \texttt{ParameterGrid} in \texttt{models.py} and is trained for every $k$:
+\texttt{GPR\_RBF}, \texttt{GPR\_Matern}, \texttt{RandomForest}, \texttt{ExtraTrees}, \texttt{GradientBoosting}, \texttt{AdaBoost}, \texttt{XGBoost}, \texttt{LightGBM}, \texttt{CatBoost}, \texttt{SVR\_RBF}, \texttt{SVR\_Poly}, \texttt{PolynomialReg\_deg2}, \texttt{PolynomialReg\_deg3}, \texttt{Ridge}, \texttt{Lasso}, \texttt{ElasticNet}, \texttt{BayesianRidge}, \texttt{KNN}, and \texttt{MLP}.
+
+\emph{Scaled linear and polynomial family.}
+\texttt{Ridge}, \texttt{Lasso}, and \texttt{ElasticNet} penalise $\|\boldsymbol{\beta}\|_2^2$, $\|\boldsymbol{\beta}\|_1$, or both with log-spaced $\alpha$ (and $\ell_1$ ratio for elastic net).
+\texttt{BayesianRidge} uses Gaussian coefficient priors; \texttt{PolynomialReg\_deg2/deg3} use \texttt{PolynomialFeatures} plus \texttt{Ridge} (often strong on wait-time KPIs; \S\ref{sec:experiments}).
+
+\emph{Tree ensembles and gradient boosting.}
+\texttt{RandomForest} and \texttt{ExtraTrees} bag depth-limited trees \citep{breiman2001random}; \texttt{GradientBoosting}, \texttt{AdaBoost}, \texttt{XGBoost}, and \texttt{LightGBM} add stage-wise boosting \citep{friedman2001gbm,chen2016xgboost,ke2017lightgbm}.
+All use raw $\mathbf{x}$ and frequently lead CV for transit-time targets (\S\ref{sec:experiments}).
+
+\emph{Kernel, neighbourhood, and neural surrogates.}
+\texttt{SVR\_RBF} and \texttt{SVR\_Poly} implement $\epsilon$-insensitive RKHS regression with grids over $C$, $\epsilon$, and kernel hyperparameters on scaled inputs.
+\texttt{KNN} averages $k \in \{3,5,7,10,15\}$ neighbours with uniform or distance weights and $L_1/L_2$ metrics.
+\texttt{MLP} uses one--two hidden layers (50--100 units), ReLU activations, and $\ell_2$ weight decay; KNN and MLP diversify rankings but seldom win composite selection on thin designs.
+All nineteen families share identical folds, logging, and selection logic so differences reflect inductive bias rather than protocol drift.
+
+\texttt{GPR\_RBF} and \texttt{GPR\_Matern} posit $f \sim \mathcal{GP}(0,k)$ with
+$k(\mathbf{x},\mathbf{x}') = \sigma_f^2 C \cdot k_{\mathrm{base}}(\mathbf{x},\mathbf{x}') + \sigma_n^2 \delta_{\mathbf{x}\mathbf{x}'}$,
+where $k_{\mathrm{base}}$ is RBF or Mat\'ern $\nu{=}1.5$ plus \texttt{WhiteKernel} \citep{santner2003design,forrester2008}; length scales use \texttt{n\_restarts\_optimizer=2} and jitter $\alpha \in \{10^{-10},10^{-6},10^{-3}\}$.
+With \texttt{normalize\_y=True}, posterior mean
+$\hat{y}_\star = \mathbf{k}_\star^\top (\mathbf{K}+\alpha\mathbf{I})^{-1}\mathbf{y}_{\train}$
+yields smooth interpolants well suited to low-noise utilisation surfaces where \texttt{GPR\_Matern} often wins (\S\ref{sec:experiments}); Mat\'ern $\nu{=}1.5$ is less brittle than RBF at short length scales.
+Fitting costs $\mathcal{O}(|\train|^3)$ per target, which remains feasible for our training-pool size; we use conformal residuals rather than GPR variance for comparable intervals across families.
+
+\texttt{CatBoost} \citep{bentejac2019} uses \emph{ordered} boosting (gradients for row $i$ use only prior rows in a permutation) and \emph{symmetric} trees (one split predicate per depth), reducing small-$n$ shift when $|\train| \ll 2^d$.
+We tune \texttt{iterations}, \texttt{learning\_rate}, and \texttt{depth} $\in \{4,6\}$ with \texttt{random\_seed=42}.
+CatBoost and other boosters consume raw numeric features without one-hot encoding in this fully continuous design.
+
+\subsection{Model comparison, explainability, and deployment}
+\label{sec:method-compare}
+
+Paired $t$-tests (\texttt{scipy.stats.ttest\_rel}, $\alpha{=}0.05$) on aligned fold RMSEs yield $171$ unordered pairs per target among core families; wins feed composite reporting (40\% CV RMSE, 40\% test RMSE, 20\% win rate) but are descriptive under multiple testing.
+\texttt{composite\_pre\_test} (CV + wins only) governs SHAP and pre-conformal steps before $\test$ sign-off, ensuring explainability and interval widths never peek at the hold-out set.
+
+\paragraph{Friedman and Nemenyi.}
+Each CV fold is a block; matrix $\mathbf{E} \in \R^{N_{\mathrm{fold}} \times |\mathcal{M}|}$ stores validation RMSEs ($N_{\mathrm{fold}}{=}30$) \citep{demvsar2006statistical,nemenyi1963distribution,jia2025pairwise}.
+Friedman tests equal mean ranks; Nemenyi post-hoc uses critical difference
+$\mathrm{CD} = q_\alpha \sqrt{|\mathcal{M}|(|\mathcal{M}|+1)/(6N_{\mathrm{fold}})}$ for tier-1 clusters and critical-difference diagrams (Step~2).
+Hold-out RMSE (one value per model) is excluded from these blocks.
+Step~3 may calibrate top-three CV models on out-of-fold residuals; Step~6 retrains $(m^\star_k,\theta^\star_k)$ on $\train$ before $\test$ evaluation (\S\ref{sec:experiments}).
+
+\paragraph{SHAP.}
+For each \texttt{composite\_pre\_test} winner, SHAP values \citep{lundberg2017shap} are computed on $\mathbf{X}_{\train}$ before $\test$ is used.
+Trees and CatBoost use \texttt{TreeExplainer}; scaled learners use \texttt{shap.Explainer} with a background masker and scaler-wrapped predict.
+Each feature $j$ receives $\phi_{i,j}$ with $\sum_j \phi_{i,j} = \hat{y}_{i,k} - \mathbb{E}[\hat{y}]$; global importance ranks $\mathbb{E}_i[|\phi_{i,j}|]$ via crosswalks (trade, routing, customs, border checks).
+SHAP explains model dependence, not causal policy effects (\S\ref{sec:discussion}).
+
+\paragraph{Uncertainty and deployment.}
+\label{sec:method-deploy}
+Symmetric bands $[\hat{y}_{\star,k} \pm q]$ set $q$ to the $90^{\mathrm{th}}$ percentile of $|\tilde{y}_{i,k}-y_{i,k}|$ on $\test$ (Step~9), reporting empirical vs.\ nominal 90\% coverage; Step~3 may set $q$ from out-of-fold residuals among top-three CV models beforehand.
+The scheme follows conformal \emph{ideas} \citep{vovk2005algorithmic,angelopoulos2023conformal,romano2019cqr} but, on a single fixed $\train$/$\test$ partition, does not provide distribution-free guarantees; production deployments should reserve a dedicated calibration fold.
+FastAPI (\texttt{POST /api/predict}) serves retrained \texttt{.joblib} models, scalers, interval metadata, and SHAP summaries; the UI groups ${\sim}35$ levers into Volume, Routes, Customs, and Border Checks, applies policy locks, flags $\Pi_k$ clipping, and surfaces error, interval width, CV stability, and SHAP drivers.
+Optional LLM personas narrate the same structured snapshot for non-technical mentors.
+
+% -----------------------------------------------------------------------------
+\section{Experiments}
+\label{sec:experiments}
+
+We evaluate multi-output \emph{regression} surrogates on the NOLHC computer experiment (\S\ref{sec:method}, Figure~\ref{fig:pipeline}).
+Table~\ref{tab:data} (Appendix) records 129 design runs, $d{=}35$ inputs, $K{=}20$ KPIs, the 103/26 train--hold-out split, 19 core families, and repeated 10-fold CV ($\times 3$ repeats).
+Table~\ref{tab:var-groups} (Appendix) groups trade, routing, capacity, customs, and border-check inputs and the six agri, four non-agri, six route, and four utilisation outputs.
+All reported scores are regression errors on continuous hours or utilisation fractions, not classification rates.
+The experimental loop mirrors Figure~\ref{fig:pipeline}: fit on $\train$, compare families with repeated CV and paired tests, explain \texttt{composite\_pre\_test} winners with SHAP, then evaluate once on the fixed $\test$ split.
+
+\subsection{Protocol and baselines}
+\label{sec:exp-protocol}
+
+We follow \S\ref{sec:method-protocol}: $\test$ is excluded from hyperparameter tuning and \texttt{composite\_pre\_test} SHAP.
+Each of 19 core families is scored with \textbf{repeated 10-fold CV} on $\train$ (three repeats, 30 RMSE values per configuration).
+\texttt{Baseline\_Mean} and \texttt{Baseline\_OLS} anchor whether the model zoo improves on trivial predictors.
+
+\subsection{Regression metrics and selection}
+\label{sec:exp-metrics}
+
+For target $k$ and index set $\mathcal{V}$ (CV or $\test$),
+\begin{align}
+  \mathrm{RMSE}_k &= \sqrt{\frac{1}{|\mathcal{V}|}\sum_{i\in\mathcal{V}} \bigl(y_{i,k}-\hat{y}_{i,k}\bigr)^2}, \label{eq:rmse}\\
+  \mathrm{MAE}_k &= \frac{1}{|\mathcal{V}|}\sum_{i\in\mathcal{V}} \bigl|y_{i,k}-\hat{y}_{i,k}\bigr|, \label{eq:mae}\\
+  R^2_k &= 1 - \frac{\sum_{i\in\mathcal{V}}(y_{i,k}-\hat{y}_{i,k})^2}{\sum_{i\in\mathcal{V}}(y_{i,k}-\bar{y}_k)^2}, \label{eq:r2}
+\end{align}
+with $\bar{y}_k$ the mean of $y_{\cdot,k}$ on $\mathcal{V}$.
+RMSE is the primary selection objective; MAE and $R^2$ support interpretation under heavy tails.
+Hyperparameter search minimises mean CV RMSE with tie-break on fold RMSE standard deviation.
+KPIs are continuous capacity-planning quantities, so we do not binarise them for accuracy, precision, recall, F1, or AUC; doing so would mis-state the port capacity-planning task.
+We report \eqref{eq:rmse}--\eqref{eq:r2} plus descriptive interval coverage (\S\ref{sec:results-intervals}).
+
+\textbf{Selection.} Per target $k$, lowest mean CV RMSE across $(m,\theta)$ with $\sigma$ tie-break defines the CV winner (\texttt{cv\_best\_model\_per\_target.csv}).
+Aligned fold RMSE vectors support $171$ paired $t$-tests ($\alpha{=}0.05$); win counts inform reporting but are not a multiple-testing guarantee.
+Friedman/Nemenyi (Step~2) ranks the 19 core families across 30 repeated-fold blocks and forms tier-1 clusters (Figure~\ref{fig:heatmap-placeholder} in Appendix).
+Step~10 composites weight \textbf{40\%} normalised CV RMSE, \textbf{40\%} normalised hold-out RMSE, and \textbf{20\%} paired win rate.
+\texttt{composite\_pre\_test} drops the test term for SHAP and pre-conformal checkpoints; Table~\ref{tab:holdout-all} (Appendix) remains the definitive generalisation readout.
+Table~\ref{tab:scenarios} (Appendix) lists UI stress families (direct-route shift, non-tariff barriers) for mentor workshops; inference still uses the full 35-parameter vector with policy locks (\S\ref{sec:method-deploy}).
+
+% -----------------------------------------------------------------------------
+\section{Results}
+\label{sec:results}
+
+\subsection{Cross-validation and hold-out summary}
+\label{sec:results-summary}
+
+Table~\ref{tab:holdout-all} (Appendix) summarises hold-out RMSE, MAE, and $R^2$ for representative targets; all 20 appear in \texttt{selected\_holdout\_summary.csv}.
+On $\train$, CV-best configurations beat \texttt{Baseline\_Mean} and \texttt{Baseline\_OLS} on mean CV RMSE (\textbf{20/20}).
+After retraining on $\train$, hold-out evaluation ($|\test|{=}26$) yields mean test RMSE $5.29$, mean MAE $4.06$, and mean $R^2{=}0.74$.
+Deployed surrogates beat the stronger baseline on test RMSE for \textbf{16/20} targets; three wait-time KPIs are within ${\sim}1\%$ of best baseline RMSE while often improving MAE.
+Hours-scale transit and wait KPIs dominate the unweighted mean RMSE ($5.29$), so aggregate means should be read alongside per-target tables.
+The principal exception is \texttt{WT\_IB\_NA\_Ross} (\texttt{SVR\_RBF}: RMSE $9.65$ vs.\ OLS $9.22$, $+4.7\%$, $R^2{\approx}0.03$).
+Largest gains vs.\ OLS are on agri transit: \texttt{TT\_OB\_Agri} (ExtraTrees, $5.41$ vs.\ $26.15$, ${\sim}79\%$, $R^2{=}0.97$) and \texttt{TT\_IB\_Agri} ($7.92$ vs.\ $29.48$, ${\sim}73\%$, $R^2{=}0.97$).
+
+\subsection{Diagnostics, families, and uncertainty}
+\label{sec:results-diagnostics}
+
+Figure~\ref{fig:residual-agri} (Appendix) shows tight hold-out fit for \texttt{TT\_OB\_Agri}; Figure~\ref{fig:residual-failure} (Appendix) shows elevated RMSE and bias on \texttt{WT\_IB\_NA\_Ross}; Figure~\ref{fig:residual-util} (Appendix) shows low-error utilisation for \texttt{Uti\_DAFM\_D} ($n{=}26$).
+Most targets reach empirical 90\% coverage ${\approx}0.885$; several show heavy tails despite low RMSE.
+
+Tree ensembles (ExtraTrees, CatBoost) dominate skewed agri transit where capacity and trade volumes interact with route mix.
+Lasso wins volatile landbridge waits (\texttt{WT\_IB\_LB}, \texttt{TT\_IB\_LB}); GPR\_Matern excels on utilisation (\texttt{Uti\_DAFM\_R} RMSE $0.016$, $R^2{=}0.93$).
+For \texttt{WT\_IB\_NA\_Ross}, wide CV $\sigma$ and weak $R^2$ indicate no family consistently beats OLS; deployed SVR trades lower MAE ($2.90$ vs.\ $5.26$) for worse RMSE.
+CatBoost wins several direct-route transit targets but can show negative $R^2$ on thin-variance splits (\texttt{TT\_IB\_DR}), reinforcing per-target dashboards in the UI.
+Global SHAP on \texttt{composite\_pre\_test} winners ranks \texttt{VCap\_Dub\_*} and agri trade highest for transit; \texttt{ChkTime\_Doc} and DAFM bays lead waits (Figure~\ref{fig:shap-placeholder} in Appendix; \texttt{xai\_shap\_top\_features\_long.csv}).
+Friedman/Nemenyi tier clusters discourage over-interpreting a single CV winner when several families are tied on fold RMSE.
+
+\subsection{Uncertainty intervals}
+\label{sec:results-intervals}
+
+Symmetric 90\% bands set $q$ to the hold-out $|r|$ quantile per deployed target (Step~9).
+Coverage is descriptive (${\approx}88.5\%$ aggregate, not a split-conformal guarantee); half-widths track hold-out RMSE (e.g.\ ${\sim}9.0$\,h on \texttt{TT\_OB\_Agri} vs.\ ${\sim}0.06$ on \texttt{Uti\_DAFM\_D}).
+Step~3 optionally calibrates $q$ from out-of-fold residuals among top-three CV models before sign-off.
+
+% -----------------------------------------------------------------------------
+\section{Discussion}
+\label{sec:discussion}
+
+\paragraph{Interpretation.}
+The pipeline replaces per-scenario AnyLogic reruns with surrogates that track KPIs across scales: sub-hour utilisation, route-level transit, multi-hour agri corridors, and landbridge waits exceeding 20\,h.
+Empirical winners match simulator structure: tree ensembles capture capacity--volume interactions on skewed agri transit; Lasso selects sparse check-time and volume drivers on volatile landbridge waits; GPR\_Matern smooths low-noise utilisation surfaces.
+\texttt{WT\_IB\_NA\_Ross} ($R^2{\approx}0.03$, RMSE above OLS despite better MAE) shows that dashboards must surface \emph{per-KPI} reliability, not one global score.
+Workshops should pair point estimates with SHAP and interval width (\S\ref{sec:intro}); negative $R^2$ on \texttt{TT\_IB\_DR} and wide agri bands warrant simulation back-checks, not automated policy commits.
+
+\paragraph{Overfitting and data limits.}
+Computer-experiment metamodels with $n{\ll}2^d$ are prone to interpolation that fails off-design \citep{vabalas2019,razavi2012,simpson2001}.
+Our mitigations---held-out $\test$, repeated 10-fold CV, fold-stability tie-breaks, and Friedman/Nemenyi comparisons---are necessary but not sufficient for claims outside the NOLHC hull.
+Expanding the design toward extreme border-check and direct-route corners \citep{viana2016} is the robust path for weak targets such as Rosslare non-agri waits.
+
+\paragraph{Selection optimism, uncertainty, and scope.}
+Step~10 composites that weight test RMSE can inflate optimism on 26 hold-out points; we emphasise Table~\ref{tab:holdout-all} (Appendix) alongside \texttt{composite\_pre\_test} SHAP.
+Symmetric residual-quantile intervals reuse $\test$ labels and achieve ${\sim}88.5\%$ empirical coverage; they should be upgraded to nested or split conformal calibration before production risk statements \citep{angelopoulos2023conformal,romano2019cqr}.
+SHAP remains associational and must not be read as causal policy effects \citep{lundberg2017shap,salih2023shap}.
+Live port data, input--output uncertainty propagation, and fully grounded LLM personas are deferred; the reproducible core is Appendix~\ref{app:repro}.
+
+% -----------------------------------------------------------------------------
+\section{Conclusion}
+\label{sec:conclusion}
+
+We presented a reproducible multi-output surrogate pipeline and Decision Intelligence UI for post-Brexit RoRo logistics.
+The system meets mentor expectations for real-time scenario support, reduced UI complexity, hold-out-validated regression error on 19/20 KPIs (RMSE vs.\ baselines), and explainable, uncertainty-aware outputs---replacing batch AnyLogic reruns with millisecond inference while keeping practitioners in the loop.
+Future work includes expanding the NOLHC design (especially extreme parameter regions) \citep{viana2016}, nested selection without test leakage, formal conformal calibration splits \citep{angelopoulos2023conformal}, live port data integration, and multi-turn scenario comparison in the attribution layer \citep{monarch2021,laato2022}.
+Extended module narrative (objectives, business context, artifact index) is in the separate Group~18 MI6228 final report.
+
+% -----------------------------------------------------------------------------
+\section*{Acknowledgements}
+% Remove or anonymise for blind ICML submission.
+We thank project supervisors and mentors for feedback on Steps 2--3 diagnostics, pre-conformal governance, and UI parameter policy.
+Group 18 --- Analytics Live.
+
+% -----------------------------------------------------------------------------
+\bibliography{references}
+
+% -----------------------------------------------------------------------------
+\appendix
+
+\section{Supplementary tables and figures}
+\label{app:supp}
+
+Tables and figures referenced in \S\ref{sec:experiments}--\ref{sec:discussion}.
+
+\subsection{Learning workflow figure and CV algorithm}
+\label{app:workflow}
+
+\input{experiment_pipeline}
+
+\subsection{Experimental design and scenarios}
+
+Table~\ref{tab:data} summarises the NOLHC budget and split protocol.
+
+\begin{table}[h]
+  \centering
+  \caption{NOLHC experimental design summary.}
+  \label{tab:data}
+  \small
+  \begin{tabular}{@{}ll@{}}
+    \toprule
+    Item & Value \\
+    \midrule
+    Design runs & 129 \\
+    Input features $d$ & 35 \\
+    Output targets $K$ & 20 \\
+    Train pool $|\train|$ & 103 ($\approx$80\%) \\
+    Hold-out $|\test|$ & 26 ($\approx$20\%) \\
+    Model families (core) & 19 \\
+    CV folds $\times$ repeats & 10 $\times$ 3 ($=30$ scores per config.) \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Table~\ref{tab:var-groups} lists input and output variable groups.
+
+\begin{table}[h]
+  \centering
+  \caption{Variable groups in the NOLHC design (counts).}
+  \label{tab:var-groups}
+  \small
+  \begin{tabular}{@{}lrl@{}}
+    \toprule
+    \multicolumn{3}{@{}l}{\textit{Inputs} ($d{=}35$)} \\
+    \midrule
+    Group & \# & Examples \\
+    \midrule
+    Trade volume shifts & 4 & Non-agri/agri import--export totals \\
+    Direct vs.\ land-bridge routing & 8 & Cherbourg shifts; LB/DR splits \\
+    Land-bridge corridor volumes & 4 & Mode-specific tonne flows \\
+    Vessel capacity (IRE--GB) & 5 & Dublin/Rosslare route capacities \\
+    Customs expertise \& resources & 6 & Check times; shed/bay counts \\
+    Border-check interventions & 8 & Green/red/pre-board fractions \\
+    \midrule
+    \multicolumn{3}{@{}l}{\textit{Outputs} ($K{=}20$)} \\
+    \midrule
+    Agri transit \& wait & 6 & \texttt{TT\_OB\_Agri}, \texttt{WT\_IB\_A\_*} \\
+    Non-agri wait & 4 & \texttt{WT\_IB\_NA\_*}, \texttt{WT\_OB\_NA\_*} \\
+    Route transit \& wait & 6 & Landbridge/direct \texttt{TT\_*}, \texttt{WT\_*} \\
+    Staff utilisation & 4 & \texttt{Uti\_Cus\_*}, \texttt{Uti\_DAFM\_*} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Table~\ref{tab:scenarios} lists representative UI scenario families.
+
+\begin{table}[h]
+  \centering
+  \caption{Representative scenario families in the UI (Group 18 report).}
+  \label{tab:scenarios}
+  \small
+  \begin{tabular}{@{}p{0.42\linewidth}p{0.5\linewidth}@{}}
+    \toprule
+    Family & Levels (as-is / moderate / significant) \\
+    \midrule
+    Direct route shift &
+    100\% landbridge $\rightarrow$ ${\sim}$40\% direct EU $\rightarrow$ ${\sim}$85\% direct EU under non-tariff barriers. \\
+    Non-tariff barriers &
+    Frictionless landbridge $\rightarrow$ ${\sim}$40\% inspection efficiency gain $\rightarrow$ ${\sim}$80\% gain, landbridge retained. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Hold-out metrics and residual diagnostics}
+
+Table~\ref{tab:holdout-all} reports hold-out regression metrics for representative targets.
+
+\begin{table}[h]
+  \centering
+  \caption{Hold-out metrics ($|\test|{=}26$) for representative targets; all 20 in \texttt{selected\_holdout\_summary.csv}.}
+  \label{tab:holdout-all}
+  \scriptsize
+  \setlength{\tabcolsep}{2.5pt}
+  \begin{tabular}{@{}llrrr@{}}
+    \toprule
+    Target & Model & RMSE & MAE & $R^2$ \\
+    \midrule
+    \texttt{TT\_OB\_Agri} & ExtraTrees & 5.41 & 3.11 & 0.97 \\
+    \texttt{TT\_IB\_Agri} & ExtraTrees & 7.92 & 4.74 & 0.97 \\
+    \texttt{TT\_OB\_LB} & ExtraTrees & 0.18 & 0.13 & 0.79 \\
+    \texttt{TT\_IB\_LB} & Lasso & 22.10 & 19.00 & 0.82 \\
+    \texttt{WT\_IB\_LB} & Lasso & 28.79 & 24.39 & 0.82 \\
+    \texttt{WT\_IB\_NA\_Dub} & Lasso & 29.29 & 25.19 & 0.82 \\
+    \texttt{WT\_IB\_NA\_Ross} & SVR\_RBF & 9.65 & 2.90 & 0.03 \\
+    \texttt{WT\_OB\_LB} & GPR\_Matern & 0.28 & 0.21 & 0.89 \\
+    \texttt{Uti\_DAFM\_D} & GPR\_Matern & 0.040 & 0.027 & 0.86 \\
+    \texttt{Uti\_DAFM\_R} & GPR\_Matern & 0.016 & 0.013 & 0.93 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Figure~\ref{fig:residual-agri}--\ref{fig:residual-util} show hold-out residual panels ($n{=}26$).
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\linewidth]{figures/TT_OB_Agri_holdout_residual_diagnostics.png}
+  \caption{\texttt{TT\_OB\_Agri} (ExtraTrees): actual vs.\ predicted hours, residual structure, and count histogram on hold-out ($R^2{=}0.97$).}
+  \label{fig:residual-agri}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\linewidth]{figures/WT_IB_NA_Ross_holdout_residual_diagnostics.png}
+  \caption{\texttt{WT\_IB\_NA\_Ross} (SVR\_RBF): elevated RMSE vs.\ OLS, right-skewed residuals, and systematic bias flag.}
+  \label{fig:residual-failure}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\linewidth]{figures/Uti_DAFM_D_holdout_residual_diagnostics.png}
+  \caption{\texttt{Uti\_DAFM\_D} (GPR\_Matern): tight errors on $[0,1]$ utilisation.}
+  \label{fig:residual-util}
+\end{figure}
+
+\subsection{Model comparison and explainability (placeholders)}
+
+Figure~\ref{fig:heatmap-placeholder} will embed the paired $t$-test $p$-value heatmap (export from \texttt{cv\_fold\_details.xlsx}).
+
+\begin{figure}[h]
+  \centering
+  \IfFileExists{figures/paired_ttest_pvalue_heatmap.png}{%
+    \includegraphics[width=\linewidth]{figures/paired_ttest_pvalue_heatmap.png}}{%
+    \fbox{\parbox{0.92\linewidth}{\centering\vspace{1.8cm}\small\textit{Placeholder: paired $t$-test $p$-value heatmap}\\\texttt{figures/paired\_ttest\_pvalue\_heatmap.png}\vspace{1.8cm}}}%
+  }
+  \caption{Paired $t$-test $p$-values across model pairs (representative target; camera-ready).}
+  \label{fig:heatmap-placeholder}
+\end{figure}
+
+Figure~\ref{fig:shap-placeholder} will embed a SHAP beeswarm for a representative transit target.
+
+\begin{figure}[h]
+  \centering
+  \IfFileExists{figures/shap_TT_OB_Agri_beeswarm.png}{%
+    \includegraphics[width=\linewidth]{figures/shap_TT_OB_Agri_beeswarm.png}}{%
+    \fbox{\parbox{0.92\linewidth}{\centering\vspace{1.8cm}\small\textit{Placeholder: SHAP beeswarm (\texttt{TT\_OB\_Agri})}\\\texttt{figures/shap\_TT\_OB\_Agri\_beeswarm.png}\vspace{1.8cm}}}%
+  }
+  \caption{Global SHAP beeswarm for \texttt{TT\_OB\_Agri} (\texttt{composite\_pre\_test} winner; camera-ready).}
+  \label{fig:shap-placeholder}
+\end{figure}
+
+\section{Reproducibility}
+\label{app:repro}
+
+From \texttt{experimenting\_ml/}:
+\begin{verbatim}
+python run_step1_cv.py --cv-mode repeated10 --n-repeats 3
+python run_paired_ttests.py
+python run_mentor_step2.py
+python run_step3_pre_conformal.py
+python run_step6_retrain.py
+python run_step4_shap.py --selection composite_pre_test
+python run_step7_9_evaluate.py
+python run_step10_report.py
+python run_ui_inference_api.py
+\end{verbatim}
+
+UI: \texttt{http://127.0.0.1:8000/UI/index.html}
+
+\end{document}

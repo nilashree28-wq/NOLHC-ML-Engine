@@ -28,3 +28,15 @@ brexit_ml/models/
 .vscode/
 *.swp
 .DS_Store
+
+# Local caches / temp tooling
+.pydeps/
+.tmp_pypdf/
+**/~$*.docx
+**/~$*.xlsx
+
+# Large duplicate handoff zips (keep source trees; ignore archives)
+*.zip
+Submission_Package_Group 18/
+submission_package 2/
+submission_package_mentor 2/
