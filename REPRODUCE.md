@@ -78,10 +78,11 @@ cd nolhc_ml
 ./.venv/bin/python src/evaluate_to_excel.py
 ```
 
-`train.py` is deterministic (seed 42, 80/20 split 103/26). Re-running it
-reproduces the same per-KPI winners and the linear/GP/tree metrics to within
-floating point; **XGBoost / LightGBM / CatBoost metrics match only to
-library-version tolerance** — pin via the lock file for the closest match.
+`train.py` is deterministic (seed 42, 80/20 split 103/26). Verified 2026-09-05
+on the committed lock file: a full re-run reproduced **all 20/20 per-KPI
+winners, `avg_r2` (0.7357) and `stacking_won_count` (8) exactly**, boosting
+models included. Off the pinned versions, expect XGBoost / LightGBM / CatBoost
+metrics to drift to library-version tolerance — use the lock file.
 
 ---
 
@@ -176,7 +177,8 @@ workbooks above are the format reference and the field/constant mapping.
 ## 7. One-line summary for the report
 
 > All code, tests, and the full modelling methodology reproduce from a clean
-> clone on the committed Python 3.8.10 lock files. Trained artifacts are
-> committed for immediate use and regenerate deterministically under seed 42
-> (boosting models to within library-version tolerance). The AnyLogic
-> simulation and live-LLM narration require their external services.
+> clone on the committed Python 3.8.10 lock files (verified 2026-09-05:
+> nolhc_ml 9 tests, experimenting_ml 146, brexit_ml 52; both UIs and the loop
+> CLI live; `train.py` regenerated all 20/20 per-KPI winners exactly). Trained
+> artifacts are committed for immediate use. The AnyLogic simulation and
+> live-LLM narration require their external services.
