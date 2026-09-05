@@ -1,0 +1,73 @@
+[
+  {
+    "round_id": "round_20260827_161725",
+    "status": "exported_pending_manual_run",
+    "exported_at": "2026-08-27T16:17:28.967878+00:00",
+    "kpi_slugs": [
+      "tt_ob_agri",
+      "uti_dafm_r",
+      "wt_ob_a_gb_ross",
+      "tt_ib_dr"
+    ],
+    "flagged_run_ids": [
+      "proposed_0002",
+      "proposed_0003",
+      "proposed_0018",
+      "proposed_0014",
+      "proposed_0007",
+      "proposed_0004",
+      "proposed_0009",
+      "proposed_0010",
+      "proposed_0012",
+      "proposed_0011"
+    ],
+    "thresholds": {
+      "tt_ob_agri": 0.8414613500407976,
+      "uti_dafm_r": 0.02697532573391131,
+      "wt_ob_a_gb_ross": 1.241385654640227,
+      "tt_ib_dr": 2.7760957792983527
+    },
+    "n_replications": 5,
+    "seed": 42,
+    "run_requests_csv": "/Users/iniyanilaalagunirmal/Desktop/Final Brexit ML Design/experimenting_ml/data/manual_rounds/round_20260827_161725/run.csv",
+    "worklist_xlsx": "/Users/iniyanilaalagunirmal/Desktop/Final Brexit ML Design/experimenting_ml/data/manual_rounds/round_20260827_161725/run.xlsx"
+  },
+  {
+    "round_id": "round_20260829_181116",
+    "status": "exported_pending_manual_run",
+    "exported_at": "2026-08-29T18:11:18.533345+00:00",
+    "kpi_scope": "proven6",
+    "kpi_slugs": [
+      "wt_ob_lb",
+      "tt_ob_lb",
+      "uti_cus_r",
+      "wt_ob_a_gb_dub",
+      "wt_ib_na_ross",
+      "tt_ib_lb"
+    ],
+    "flagged_run_ids": [
+      "proposed_0004",
+      "proposed_0013",
+      "proposed_0012",
+      "proposed_0000",
+      "proposed_0010",
+      "proposed_0019",
+      "proposed_0020",
+      "proposed_0021",
+      "proposed_0007",
+      "proposed_0014"
+    ],
+    "thresholds": {
+      "wt_ob_lb": 0.7678671814280799,
+      "tt_ob_lb": 1.2018161510380612,
+      "uti_cus_r": 0.7903530734607244,
+      "wt_ob_a_gb_dub": 0.725275528719861,
+      "wt_ib_na_ross": 0.45993815043311526,
+      "tt_ib_lb": 2.35904407508092
+    },
+    "n_replications": 5,
+    "seed": 42,
+    "run_requests_csv": "/Users/iniyanilaalagunirmal/Desktop/Final Brexit ML Design/experimenting_ml/data/manual_rounds/round_20260829_181116/run.csv",
+    "worklist_xlsx": "/Users/iniyanilaalagunirmal/Desktop/Final Brexit ML Design/experimenting_ml/data/manual_rounds/round_20260829_181116/run.xlsx"
+  }
+]
