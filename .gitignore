@@ -11,32 +11,40 @@ __pycache__/
 dist/
 build/
 
-# Local data & trained artifacts
-brexit_ml/data/raw/*.xlsx
-brexit_ml/data/processed/*.parquet
-brexit_ml/models/
-
-# Cursor / local tooling
+# Cursor / IDE / local tooling
 .cursor/
+.idea/
+.vscode/
+*.swp
+.claude/
 
 # Env
 .env
 .env.local
 
-# IDE
-.idea/
-.vscode/
-*.swp
+# macOS / Office lock files
 .DS_Store
+**/.DS_Store
+**/~$*
 
 # Local caches / temp tooling
 .pydeps/
 .tmp_pypdf/
-**/~$*.docx
-**/~$*.xlsx
 
-# Large duplicate handoff zips (keep source trees; ignore archives)
+# CatBoost training telemetry (written to CWD during training)
+catboost_info/
+**/catboost_info/
+
+# Empty AnyLogic export scratch dirs
+Output [0-9]*/
+
+# brexit_ml is superseded Phase 1 - keep source, ignore data + regenerable artifacts
+brexit_ml/data/raw/*.xlsx
+brexit_ml/data/processed/*.parquet
+brexit_ml/models/
+
+# Stale handoff snapshots (retained in git history + on GitHub, archived off-repo 2026-09-05)
 *.zip
-Submission_Package_Group 18/
-submission_package 2/
-submission_package_mentor 2/
+submission_package/
+submission_package*/
+Submission_Package*/
