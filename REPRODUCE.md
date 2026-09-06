@@ -50,11 +50,11 @@ python3.8 -m venv .venv
 
 ```bash
 cd nolhc_ml        && ./.venv/bin/python -m pytest -q     #   9 passed
-cd experimenting_ml && ./.venv/bin/python -m pytest -q    # 146 passed  (pytest.ini scopes to tests/)
+cd experimenting_ml && ./.venv/bin/python -m pytest -q    # 156 passed  (pytest.ini scopes to tests/)
 cd brexit_ml       && ./.venv/bin/python -m pytest -q     #  52 passed, 1 skipped
 ```
 
-Last verified: 2026-09-05, Python 3.8.10, the committed lock files.
+Last verified: 2026-09-06, Python 3.8.10, the committed lock files.
 
 ---
 
@@ -120,13 +120,26 @@ python -m loop.cli_export_manual_round --kpi-scope demo4 --n-candidates 20 \
 #     (run_id, replication, seed, <one column per KPI>) ---
 
 python -m loop.cli_ingest_manual_round --round-id round_<ts> --results <results.csv>
-#   -> retrains DEMO_4 estimators on 129 + N rows, appends to
-#      data/manual_rounds/extended_{X,Y}_train.parquet, flips manifest to "ingested"
+#   -> validates the results (non-blocking warnings: all-identical KPI columns,
+#      values outside the historical range), retrains the round's estimators on
+#      the grown data, appends to data/manual_rounds/extended_{X,Y}_train.parquet,
+#      flips the manifest to "ingested". NaN-target rows are dropped per KPI.
 ```
 
 `--kpi-scope proven6` runs the same loop against the PROVEN_6 benchmarked UQ
 methods instead of the generic dispatch. `load_current_training_data()` always
-returns 129 + every ingested round.
+returns the original 129 + every ingested round.
+
+**Current state (6-Sep freeze):** two real AnyLogic rounds ingested →
+**169 training rows** (`round_20260827_161725` +10, `round_20260905_165949` +30;
+`round_20260829_181116` still pending). Growth is uneven per KPI — some columns
+were excluded from a round for unresolved data-quality reasons (spec.md §7
+items 15, 17), so per-KPI row counts differ.
+
+```bash
+# Is each PROVEN_6 KPI's fixed UQ method still the best on the grown data?
+python -m loop.cli_recalibrate_uq_methods       # read-only; flags REVIEW NEEDED, never edits proven6.py
+```
 
 ### 4.3 Scenario Decision-Intelligence UI
 
@@ -177,8 +190,8 @@ workbooks above are the format reference and the field/constant mapping.
 ## 7. One-line summary for the report
 
 > All code, tests, and the full modelling methodology reproduce from a clean
-> clone on the committed Python 3.8.10 lock files (verified 2026-09-05:
-> nolhc_ml 9 tests, experimenting_ml 146, brexit_ml 52; both UIs and the loop
-> CLI live; `train.py` regenerated all 20/20 per-KPI winners exactly). Trained
-> artifacts are committed for immediate use. The AnyLogic simulation and
-> live-LLM narration require their external services.
+> clone on the committed Python 3.8.10 lock files (verified 2026-09-06:
+> nolhc_ml 9 tests, experimenting_ml 156, brexit_ml 52; both UIs and the loop
+> CLIs live; `train.py` regenerated all 20/20 per-KPI winners exactly). Trained
+> artifacts and the grown 169-row training set are committed for immediate use.
+> The AnyLogic simulation and live-LLM narration require their external services.
