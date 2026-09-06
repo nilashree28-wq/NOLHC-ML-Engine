@@ -16,7 +16,7 @@ services. A prose walkthrough for a new analyst is in
 | `nolhc_ml/` | Production-style surrogate engine: per-KPI model registry (`v1`), FastAPI inference API, parameter UI | **Authoritative engine** |
 | `experimenting_ml/` | Research pipeline (CV, model selection, stats, SHAP, conformal) + the uncertainty / novelty / self-extension loop + scenario Decision-Intelligence UI | **Authoritative research + reliability layer** |
 | `brexit_ml/` | Phase 1 IRE↔GB corridor surrogate, trained on the earlier *Post-Brexit Sector-Based Model* completed-runs export | **Superseded** — kept for context; not part of the reproducible deliverable (see §6) |
-| `docs/` | Specs, figures, due-diligence report, paper scaffold | reference |
+| `docs/` | Engineering specs, figures, due-diligence report, this report | reference |
 
 The uncertainty loop in `experimenting_ml/src/loop/` reads the trained engine
 from `nolhc_ml/models/v1/` and the dataset from `nolhc_ml/data/` — this
@@ -61,7 +61,7 @@ Throughout this file the commands are written for macOS / Linux; on Windows repl
 
 ```bash
 cd nolhc_ml        && ./.venv/bin/python -m pytest -q     #   9 passed
-cd experimenting_ml && ./.venv/bin/python -m pytest -q    # 163 passed  (pytest.ini scopes to tests/)
+cd experimenting_ml && ./.venv/bin/python -m pytest -q    # 172 passed  (pytest.ini scopes to tests/)
 cd brexit_ml       && ./.venv/bin/python -m pytest -q     #  52 passed, 1 skipped
 ```
 
@@ -141,11 +141,16 @@ python -m loop.cli_ingest_manual_round --round-id round_<ts> --results <results.
 methods instead of the generic dispatch. `load_current_training_data()` always
 returns the original 129 + every ingested round.
 
-**Current state (6-Sep freeze):** two real AnyLogic rounds ingested →
-**169 training rows** (`round_20260827_161725` +10, `round_20260905_165949` +30;
-`round_20260829_181116` still pending). Growth is uneven per KPI — some columns
-were excluded from a round for unresolved data-quality reasons (spec.md §7
-items 15, 17), so per-KPI row counts differ.
+**Current state (6-Sep):** three AnyLogic Cloud rounds ingested →
+**179 training rows** (`round_20260827_161725` +10, `round_20260905_165949` +30,
+`round_20260906_090349` +10; `round_20260829_181116` and `round_20260906_103618`
+exported and pending). Growth is very uneven per KPI — whole columns were
+excluded from rounds for unresolved data-quality reasons (spec.md §7 items 15,
+17, 22, 23), so per-KPI counts run from 129 (`wt_ob_lb`, never populated) to 179.
+`round_20260906_090349` came through the browser-automation prototype, which
+drives an AnyLogic Cloud dashboard running a *meta-model* rather than the full
+DES — spec.md §7 item 22 flags whether that data belongs here; it is not
+reverted but is flagged.
 
 ```bash
 # Is each PROVEN_6 KPI's fixed UQ method still the best on the grown data?
@@ -209,7 +214,7 @@ workbooks above are the format reference and the field/constant mapping.
 
 > All code, tests, and the full modelling methodology reproduce from a clean
 > clone on the committed Python 3.8.10 lock files (verified 2026-09-06:
-> nolhc_ml 9 tests, experimenting_ml 163, brexit_ml 52; both UIs and the loop
+> nolhc_ml 9 tests, experimenting_ml 172, brexit_ml 52; both UIs and the loop
 > CLIs live; `train.py` regenerated all 20/20 per-KPI winners exactly). Trained
-> artifacts and the grown 169-row training set are committed for immediate use.
+> artifacts and the grown 179-row training set are committed for immediate use.
 > The AnyLogic simulation and live-LLM narration require their external services.

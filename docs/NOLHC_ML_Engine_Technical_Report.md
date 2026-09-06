@@ -76,7 +76,7 @@ timeline
     Jul 2026 : Due-diligence report : Public GitHub repository
     Aug 2026 : Uncertainty phase - SOTA review, 3-path UQ dispatch, novelty scorer, unified trust score : Synthetic and manual DES backends, dataset store, batch-sequential loop : PROVEN_6 per-family UQ-method benchmark
     Aug to Sep 2026 : Scenario UI updated - conformal intervals and trust strip on the KPI cards : Operator console added under Settings - dataset status, pending review, build round, ingest, recalibration : Optional loop wiring so the UI degrades gracefully
-    Sep 2026 : Two real AnyLogic Cloud rounds ingested, 129 to 169 rows : Results validation and recalibration check : v0 development freeze
+    Sep 2026 : Three AnyLogic Cloud rounds ingested, 129 to 179 rows : Results validation and recalibration check : Worklist integer-field fix, landbridge-to-ViaRott mapping correction : Browser-automation prototype for AnyLogic Cloud (metamodel dashboard) : v0 development freeze
 ```
 
 ### 2.1 Phase 1 — `brexit_ml` (superseded)
@@ -103,7 +103,7 @@ The engine could predict fast but could not say **when to trust a prediction**, 
 - **PROVEN_6**, a per-model-family benchmark that fixes one UQ method per family with empirical evidence;
 - **the scenario UI updated** (August–September) so the reliability signal is visible where decisions are made: conformal intervals and a trust strip on the KPI cards, and an **operator console** under Settings that runs the dataset-growth loop as a screen (Section 13). The additions are purely additive — the existing screening flow, governance layer and endpoints are untouched.
 
-By the 5–6 September freeze, **two real AnyLogic Cloud rounds** had been run by hand and ingested, growing the training set from **129 to 169 rows** on the record.
+By the 6 September freeze, **three AnyLogic Cloud rounds** had been ingested, growing the training set from **129 to 179 rows** on the record. (One caveat surfaced late and is disclosed in Section 15.2: the AnyLogic Cloud *dashboard* route used for the September rounds runs a trained meta-model of the simulation, not the full discrete-event model — whether meta-model-sourced points belong in this project's own surrogate training set is an open question for the mentor.)
 
 ---
 
@@ -163,7 +163,7 @@ NOLHC-ML-Engine/
 ├── nolhc_ml/            # Authoritative engine — registry v1, FastAPI, parameter UI
 ├── experimenting_ml/    # Research pipeline + uncertainty loop + scenario UI
 ├── brexit_ml/           # Phase 1 (superseded — context only)
-├── docs/                # Specs, figures, this report, due-diligence report, paper scaffold
+├── docs/                # Engineering specs, figures, this report, due-diligence report
 ├── REPRODUCE.md         # Clean-clone → running-system checklist
 └── .gitignore
 ```
@@ -240,7 +240,7 @@ experimenting_ml/
 │       ├── uq/                 # dispatch.py + tree_native, gpr_native, conformal_fallback, mapie_cv_plus
 │       └── des_backend/        # synthetic.py, ground_truth_gp.py, demo4_ground_truth.py,
 │                               #   manual_worklist.py (+ ground_truth_gps.joblib)
-│                               #   [planned] cloud_api.py — automated AnyLogic Cloud driver (§9.4)
+│                               #   [prototype, not committed] cloud_api.py — AnyLogic Cloud browser driver (§9.4)
 ├── data/manual_rounds/        # round_<ts>/ (run.csv, run.xlsx, results.csv) +
 │                              #   extended_X/Y_train.parquet + rounds_manifest.json
 ├── docs/
@@ -464,9 +464,11 @@ The generic dispatcher (`uq/dispatch.py`) takes a list of KPI slugs and routes e
 |---|---|---|
 | `SyntheticDESBackend` | Fast, offline. A Gaussian-process (for GP-won KPIs) or the trained production model (for the rest) stands in as ground truth, with injected replication noise. For iterating on loop mechanics. | `des_backend/synthetic.py`, `ground_truth_gp.py`, `demo4_ground_truth.py` |
 | `ManualWorklistDESBackend` | The real path. Generates a human-followable worklist (35 varying values + 89 constants per candidate) and ingests the AnyLogic results file back. | `des_backend/manual_worklist.py` |
-| *(planned)* `CloudApiDESBackend` | **Under development (§9.4).** Same interface as the manual backend, but drives AnyLogic Cloud directly with stored credentials and returns the completed results workbook — removing the by-hand data entry. Not yet in the repository. | *(planned)* `des_backend/cloud_api.py` |
+| *(prototype)* `CloudApiDESBackend` | **§9.4 — working prototype, not committed.** A Playwright script drives the AnyLogic Cloud dashboard from a worklist, no by-hand entry. Caveat: the dashboard runs a *meta-model*, not the DES, and only 4 KPIs come back cleanly. | *(prototype)* `des_backend/cloud_api.py` |
 
-The replication **count** for the original 129 runs is confirmed (5 per point); the replication **noise magnitude** is a documented placeholder (`0.15 × CV-RMSE`), because the per-replication values behind the 129 means were not retained.
+The replication **count** for the original 129 runs is confirmed (5 per point); the replication **noise magnitude** is a documented placeholder (`0.15 × CV-RMSE`), because the per-replication values behind the 129 means were not retained. The September growth rounds entered through the AnyLogic Cloud dashboard came back with **`seed = 1`, a single replication** (spec.md §7 item 22) — a further reason the meta-model-sourcing question in Section 15.2 needs resolving before those rows carry weight.
+
+`manual_worklist.py` writes the worklist with AnyLogic's own field types respected: **27 of the 35 factors are Integer-typed** in AnyLogic Cloud (volumes, staff counts, vessel capacities, check-time minutes) and are rounded to whole numbers; only the 8 percentage / fraction factors keep a decimal value. Before this fix (spec.md §7 item 20) every factor was written as a raw float, which AnyLogic's manual-entry form rejects outright.
 
 ### 8.6 The batch-sequential loop
 
@@ -479,11 +481,11 @@ The replication **count** for the original 129 runs is confirmed (5 per point); 
 ### 8.7 Results validation and recalibration (September additions)
 
 - `results_validation.py` — before an ingest is trusted, warns (non-blocking) about KPI columns where every new value is identical, or values far outside the historical range. Built after a real incident where four KPIs read exactly 0.000 across a whole batch.
-- `recalibration_check.py` / `cli_recalibrate_uq_methods.py` — re-runs each PROVEN_6 KPI's family comparison against the current (grown) training set and flags `REVIEW NEEDED` where the closest-to-target method now differs from the fixed one. **Read-only** — it never edits `proven6.py`; a changed winner is surfaced for the same mentor sign-off the original choice went through. On the 169-row dataset, only `tt_ob_lb` currently flags.
+- `recalibration_check.py` / `cli_recalibrate_uq_methods.py` — re-runs each PROVEN_6 KPI's family comparison against the current (grown) training set and flags `REVIEW NEEDED` where the closest-to-target method now differs from the fixed one. **Read-only** — it never edits `proven6.py`; a changed winner is surfaced for the same mentor sign-off the original choice went through. On the current grown dataset, only `tt_ob_lb` currently flags.
 
 ### 8.8 State at the freeze
 
-Two real AnyLogic Cloud rounds ingested → **169 training rows** (129 + 10 + 30). One round (`round_20260829_181116`, PROVEN_6) remains exported and pending its real run. Growth is uneven per KPI because some columns were excluded from a round for unresolved data-quality reasons (Section 15).
+Three AnyLogic Cloud rounds ingested → **179 training rows** (129 + 10 + 30 + 10). The third (`round_20260906_090349`, all20) came in through the browser-automation prototype (§9.4) and populated only 4 of the 20 KPIs — the four resource-utilisation scalars (`Uti_Cus_D/R`, `Uti_DAFM_D/R`) — the rest of that route's output is not yet mappable (§9.4). Two rounds remain exported and pending: `round_20260829_181116` (PROVEN_6) and `round_20260906_103618` (DEMO_4). Growth is **very uneven per KPI** because whole columns were excluded from rounds for unresolved data-quality reasons (Section 15.3).
 
 ---
 
@@ -534,7 +536,12 @@ Use `--kpi-scope proven6` to run against the PROVEN_6 benchmarked methods instea
 
 ### 9.2 The manual AnyLogic step — you build the worksheet
 
-**AnyLogic Cloud has no bulk import — every field is entered by hand.** The `run.xlsx` the export step produces is your worksheet: one row per requested run, the 35 varying parameter values (headed by their AnyLogic field name where one exists), the 89 confirmed constants for reference, and the replication count and seed.
+**AnyLogic Cloud has no bulk import — every field is entered by hand** (unless the browser-automation prototype in §9.4 applies). The `run.xlsx` the export step produces is your worksheet: one row per requested run, the 35 varying parameter values (headed by their AnyLogic field name where one exists), the 89 confirmed constants for reference, and the replication count and seed.
+
+Two corrections landed on 6 September (spec.md §7 items 20 and 23) and are baked into the generator:
+
+- **Integer fields.** 27 of the 35 factors are Integer-typed in AnyLogic Cloud; the worksheet now rounds them to whole numbers. Only the 8 percentage / fraction factors carry a decimal. Older worksheets wrote raw floats, which AnyLogic's entry form rejects.
+- **Four factors were mis-labelled "no AnyLogic field".** `NA_Im_LB`, `NA_Ex_LB`, `A_Im_LB`, `A_Ex_LB` in fact map to the Rotterdam-direct volume fields `VolAllPImViaRott` / `VolAllPExViaRott` / `VolAgriImViaRott` / `VolAgriExViaRott` — confirmed against the live dashboard. Only **3 factors** genuinely have no AnyLogic field now: `Pct_NA_OB_Green`, `Pct_NA_OB_Red`, `Pct_A_OB_Red`. Rounds entered by hand before this date skipped those four — see Section 15.3.
 
 For a fresh case study, or to cross-check the generated sheet, use the reference workbooks in **`experimenting_ml/docs/anylogic/`**:
 
@@ -542,7 +549,7 @@ For a fresh case study, or to cross-check the generated sheet, use the reference
 |---|---|
 | `NOLHC Designs - AL Students Recent 26.xlsx` | the 129-run designed experiment — the format your `ExpValues` / `SimResults` sheets must match |
 | `Model List of input and output parameters - recent 26.xlsx` | the 35 inputs and 20 KPIs with descriptions and units |
-| `AnyLogic_Constants_Worklist.xlsx` | the 89 confirmed-constant AnyLogic fields, the 35 varying ones, and the 7 factors that have **no** AnyLogic field (leave blank) |
+| `AnyLogic_Constants_Worklist.xlsx` | the 89 confirmed-constant AnyLogic fields, the 35 varying ones, and the 3 factors that have **no** AnyLogic field (leave blank) — was 7 until the 6-Sep ViaRott correction |
 | `AnyLogic_Run_Requests_DEMO.csv`, `AnyLogic_Manual_Worklist_DEMO.xlsx`, `NOLHC Designs - AL Students Manual Run.xlsx` | worked examples of a completed run worksheet |
 
 **Procedure:** open `run.xlsx` (cross-referenced against `AnyLogic_Constants_Worklist.xlsx`), enter every field for each run into AnyLogic Cloud, run each request's replications, and export the results as CSV with one row per replication: `run_id, replication, seed, <one column per KPI AnyLogic produced>`.
@@ -554,19 +561,27 @@ For a fresh case study, or to cross-check the generated sheet, use the reference
 - **Retrains** the round's estimators and **updates** `rounds_manifest.json` (status → `ingested`, row count, timestamps).
 - The full `nolhc_ml` engine is **not** retrained automatically (that is a ~20–40-minute job) — do it deliberately when enough rows have accumulated.
 
-### 9.4 Planned — automated AnyLogic Cloud execution (under development)
+### 9.4 Browser-automation for AnyLogic Cloud (prototype — not yet in the repository)
 
-> **Status: under development, not yet in the repository.** This subsection is a forward-looking placeholder so the folder structure and the runbook can absorb the component when it lands. Nothing here is delivered code.
+> **Status: a working prototype exists outside the repository** (`AUTOMATION_REPORT.md` + `run_anylogic_browser.py`, built by **Sakshi Dhamane**, 6 September). It has produced one real round (`round_20260906_090349`). It is **not yet committed**, and — importantly — it does not yet do what §9.4 originally set out to do. Read the caveats.
 
-The one genuinely manual link in the loop is §9.2 — a person typing each run's fields into AnyLogic Cloud and downloading the results. A driver that removes that step is being built by **Sakshi Dhamane**:
+The one genuinely manual link in the loop is §9.2 — a person typing each run's fields into AnyLogic Cloud and downloading the results. The prototype is a Playwright script that logs into the AnyLogic Cloud dashboard as a real browser session, sets each candidate's fields from the exported worklist, runs the dashboard experiment, and scrapes the results — no field-by-field typing.
 
-- **What it will do.** Take the `run.xlsx` / `run.csv` worklist that `cli_export_manual_round` already produces, sign in to AnyLogic Cloud with stored credentials, submit each run request with its replication count and seed, wait for completion, and return a **single completed results workbook** in exactly the shape §9.2 specifies (`run_id, replication, seed, <one column per KPI>`) — ready to hand straight to `cli_ingest_manual_round` / the operator console's *Ingest results* panel.
-- **Where it will slot in.** As a **third DES backend** alongside `SyntheticDESBackend` and `ManualWorklistDESBackend` (§8.5) — provisionally `experimenting_ml/src/loop/des_backend/cloud_api.py`, exposing the same `export` / `ingest` interface so `loop.py`, the CLIs and the operator console call it without change. The manual backend stays as the fallback for when the Cloud API is unavailable.
-- **What changes in the workflow.** Steps 1 and 3 of §9.1 are unchanged; step 2 (the manual entry) becomes a single command / a button in the operator console instead of a worksheet session. The trust-scoring, validation (`results_validation.py`) and append-only dataset growth all stay exactly as they are — the automation only replaces data entry, not any modelling decision.
-- **Credential handling (requirement for integration).** Login credentials must come from an environment variable or an untracked local secrets file — **never committed**, never written to the round directory or the manifest. `docs/.gitignore` / `.gitignore` will be extended to cover the secrets file before the component is merged.
-- **On delivery.** The code will be added under `experimenting_ml/src/loop/des_backend/`, with its own tests in `experimenting_ml/tests/`, an entry in `experimenting_ml/docs/spec.md` §8, and this subsection rewritten from "planned" to "delivered" with the actual command and configuration steps.
+**What works today**
 
-Until then, the manual procedure in §9.2 is the supported path and the operator console (§13) is the way to run it with the least friction.
+- Logs in with stored credentials, drives the dashboard end-to-end for a batch of candidates, returns a results workbook.
+- Independently **inspected the live dashboard field list** and corrected this repo's factor→field mapping (the ViaRott fix, §9.2 / spec.md §7 item 23).
+- Produced `round_20260906_090349` (+10 rows).
+
+**Caveats that must be resolved before it is adopted**
+
+| Caveat | Detail |
+|---|---|
+| **It drives a meta-model, not the DES** | The dashboard experiment it runs (`As-IS CI FR130`) executes `PostBrexit_Model_ML Meta Model` — a *trained surrogate* of the simulation (~25 s per run), not the full discrete-event model. Fixed `seed = 1`, single replication. Whether meta-model output is acceptable training data for this project's *own* surrogate is an **open question for the mentor** (Section 15.2). |
+| **Only 4 of 20 KPIs come back cleanly** | `Uti_Cus_D`, `Uti_DAFM_D`, `Uti_Cus_R`, `Uti_DAFM_R` (end-of-run resource-utilisation scalars). The six `TT_*` KPIs have no "transportation time" series in the dashboard export at all; the four `WT_IB_*` KPIs only appear as un-combined sub-components. The other 16 KPIs are left `NaN` for that round (same per-KPI handling as any partial round). |
+| **Not integrated, no tests, credentials not yet gated** | Still a standalone script. To be adopted it needs: the same `export` / `ingest` interface as the other DES backends (as `experimenting_ml/src/loop/des_backend/cloud_api.py`), its own tests, a `spec.md` §8 entry, and credentials from an **untracked secrets file** — never committed, never written to a round directory or the manifest. |
+
+Until those are closed, the manual procedure in §9.2 is the supported path and the operator console (§13) runs it with the least friction. The prototype's mapping corrections have already been merged into `manual_worklist.py`; its data (`round_20260906_090349`) is ingested but flagged.
 
 ---
 
@@ -605,7 +620,7 @@ foreach ($pkg in 'nolhc_ml','experimenting_ml','brexit_ml') {
 
 ```bash
 cd nolhc_ml         && ./.venv/bin/python -m pytest -q     #   9 passed
-cd experimenting_ml && ./.venv/bin/python -m pytest -q     # 163 passed
+cd experimenting_ml && ./.venv/bin/python -m pytest -q     # 172 passed
 cd brexit_ml        && ./.venv/bin/python -m pytest -q     #  52 passed, 1 skipped
 ```
 
@@ -613,7 +628,7 @@ cd brexit_ml        && ./.venv/bin/python -m pytest -q     #  52 passed, 1 skipp
 
 ```powershell
 cd nolhc_ml         ; .venv\Scripts\python -m pytest -q    #   9 passed
-cd ..\experimenting_ml ; .venv\Scripts\python -m pytest -q # 163 passed
+cd ..\experimenting_ml ; .venv\Scripts\python -m pytest -q # 172 passed
 cd ..\brexit_ml     ; .venv\Scripts\python -m pytest -q    #  52 passed, 1 skipped
 ```
 
@@ -719,7 +734,7 @@ The pipeline is **per-KPI and generic**. To add a KPI that AnyLogic already emit
 
 ### 12.2 New input parameters — a re-design project, not a config change
 
-The 35-factor design hull is baked into: the column contract, `scaler_X.pkl`, the input dimension of **every trained model**, the 35-dimensional novelty `IsolationForest`, `AnyLogic_Constants_Worklist.xlsx` (89 constants ↔ 35 varying), the UI slider metadata, and the manual-worklist generator. Critically, **the existing 169 rows have no variation on a new factor** — you cannot simply append a column.
+The 35-factor design hull is baked into: the column contract, `scaler_X.pkl`, the input dimension of **every trained model**, the 35-dimensional novelty `IsolationForest`, `AnyLogic_Constants_Worklist.xlsx` (89 constants ↔ 35 varying), the UI slider metadata, and the manual-worklist generator. Critically, **the existing training rows have no variation on a new factor** — you cannot simply append a column.
 
 Adding a 36th input requires:
 
@@ -767,8 +782,8 @@ Five panels (`operator-app.js`), each backed by `experimenting_ml/src/loop/opera
 |---|---|---|
 | **Dataset status** | `operator_api.dataset_status()` — reads `dataset_store` + manifest | See the current row count, per-KPI row counts (uneven — §15.3), and the full round history with statuses. |
 | **Pending review** | `pending_queue` + a capture hook in `/api/infer` | Triage the live scenarios the trust screen flagged as *verify*. Select the ones worth a real run, or dismiss. De-duplicated and capped so the queue stays workable. |
-| **Build round** | `operator_api.export_round()` → `loop.export_manual_round` | Set the KPI scope, candidate count, threshold, batch cap, seed; optionally use the selected pending points instead of the random proposer. Click **Generate worklist** → downloads `run.xlsx` (35 varying values + the 89 constants). Round is recorded in the manifest as `exported_pending_manual_run`. |
-| **Ingest results** | `operator_api.ingest_round()` → `loop.ingest_manual_round` + `results_validation` | Paste or upload the AnyLogic results CSV. Shows the validation warnings (all-identical columns, out-of-range values), the dataset growth, and which KPI columns were ingested. Retrains the round's estimators. |
+| **Build round** | `operator_api.export_round()` → `loop.export_manual_round` | Set the candidate count, threshold, batch cap, seed; optionally use the selected pending points instead of the random proposer. KPI scope is **fixed to `all20`** (6-Sep simplification — DEMO_4 is strictly narrower for the same mechanism, PROVEN_6 is a one-off; both were confusing as peer options). Click **Generate worklist** → downloads `run.xlsx` (35 varying values + the 89 constants). Round recorded as `exported_pending_manual_run`. |
+| **Ingest results** | `operator_api.ingest_round()` → `loop.ingest_manual_round` + `results_validation` | Paste CSV text **or upload the real results file as exported — `.csv` *or* `.xlsx`** (a real AnyLogic Cloud export is an `.xlsx`; the uploader base64-encodes it and the server sniffs the file's magic number, so a mis-named file still parses). Shows the validation warnings, the dataset growth, and which KPI columns were ingested. Retrains the round's estimators. |
 | **Recalibration check** | `operator_api.recalibration_report()` → `recalibration_check` | Re-benchmark each PROVEN_6 KPI's family on the current data; flag `REVIEW NEEDED` where the best method now differs from the fixed one. Read-only — never edits `proven6.py`. |
 
 ### 13.3 Endpoints
@@ -779,8 +794,11 @@ GET  /api/operator/pending                the pending-review queue
 POST /api/operator/pending/dismiss        { entry_id }
 POST /api/operator/round/export           { kpi_scope, n_candidates, quantile, max_batch_size,
                                             n_replications, seed, candidate_ids? } → round_id + counts
+                                          (UI sends kpi_scope="all20"; endpoint still honours any scope
+                                           for the PROVEN_6 pending round's ingest routing)
 GET  /api/operator/worklist?round_id=…    the run.xlsx worklist (file download)
-POST /api/operator/round/ingest           { round_id, results_csv } → growth summary + warnings
+POST /api/operator/round/ingest           { round_id, results_csv?  |  results_content_b64 + filename }
+                                          → growth summary + warnings   (b64 = raw file bytes; .csv/.xlsx)
 GET  /api/operator/recalibrate            the recalibration-check report
 ```
 
@@ -792,19 +810,19 @@ Capture hook: when `/api/infer` returns a `verify` decision for a user-driven sc
 flowchart LR
     A["Settings → Operator console"] --> B["Pending review:<br/>triage low-trust points"]
     B --> C["Build round:<br/>select / propose → Generate worklist → download run.xlsx"]
-    C --> D["AnyLogic Cloud:<br/>enter fields by hand, run replications, export results CSV<br/>(manual — unavoidable)"]
-    D --> E["Ingest results:<br/>paste/upload CSV → review warnings → confirm"]
+    C --> D["AnyLogic Cloud:<br/>enter fields by hand, run replications, export results (.xlsx)<br/>(manual today; §9.4 prototype may change this)"]
+    D --> E["Ingest results:<br/>paste CSV or upload .csv/.xlsx → review warnings → confirm"]
     E --> F["Dataset grows · round estimators retrain (seconds)"]
     F --> G["Occasionally: Recalibration check<br/>+ full-engine retrain when enough rows accrued"]
 ```
 
 ### 13.5 Constraints and notes
 
-- **AnyLogic entry is manual today.** The console removes bookkeeping friction, not the field-by-field data entry into AnyLogic Cloud. An automated Cloud driver that closes that last gap is under development (§9.4); when it lands, the *Build round* → *Ingest results* panels become a single automated step.
+- **AnyLogic entry is manual today.** The console removes bookkeeping friction, not the field-by-field data entry into AnyLogic Cloud. A browser-automation prototype that could close that gap exists (§9.4) but is not integrated and carries an unresolved meta-model-vs-DES question.
 - **Full `nolhc_ml` engine retrain (~20–40 min) is not automatic.** Ingest retrains only the round's loop estimators (seconds); trigger a full engine retrain deliberately when enough rows have accrued.
 - **Candidate proposer is still the v0 uniform-random placeholder** (§15.2). The "use selected pending points" option is the path to a more targeted batch until diversity-aware selection is built.
 - **State** lives in `experimenting_ml/data/operator/pending_queue.json` (git-ignored runtime state) and the existing `data/manual_rounds/`.
-- **Tests:** `experimenting_ml/tests/test_operator_console.py` (7); total suite 163.
+- **Tests:** `experimenting_ml/tests/test_operator_console.py` (pending queue, API shapes, and the `.csv`/`.xlsx` upload + magic-number-sniffing paths); total `experimenting_ml` suite **172**.
 
 ---
 
@@ -812,11 +830,11 @@ flowchart LR
 
 ```bash
 cd nolhc_ml         && ./.venv/bin/python -m pytest -q     #   9 passed
-cd experimenting_ml && ./.venv/bin/python -m pytest -q     # 163 passed
+cd experimenting_ml && ./.venv/bin/python -m pytest -q     # 172 passed
 cd brexit_ml        && ./.venv/bin/python -m pytest -q     #  52 passed, 1 skipped
 ```
 
-`experimenting_ml/pytest.ini` scopes collection to `tests/` (the legacy `src/test_eval.py` is a scratch script, not a test module).
+`experimenting_ml/pytest.ini` scopes collection to `tests/` (the legacy `src/test_eval.py` is a scratch script, not a test module). Last verified 6 September 2026.
 
 Notable coverage:
 
@@ -830,13 +848,13 @@ Notable coverage:
 | Novelty scorer (both behaviours at d=35) | `test_novelty.py` |
 | Trust score + thresholds | `test_trust.py` |
 | Synthetic DES backend + ground truth | `test_synthetic_backend.py`, `test_demo4_ground_truth.py`, `test_ground_truth_gp.py` |
-| Manual worklist generation | `test_manual_worklist.py` |
+| Manual worklist generation (incl. integer-field rounding + ViaRott mapping) | `test_manual_worklist.py` |
 | Dataset store (append-only, collision checks) | `test_dataset_store.py` |
 | Loop orchestrator + per-KPI NaN handling | `test_loop_orchestrator.py` |
 | Results validation (against the 5-Sep incident) | `test_results_validation.py` |
 | Recalibration check (reproduces the workbook's `wt_ob_lb` numbers) | `test_recalibration_check.py` |
 | Manual-round CLIs end to end | `test_cli_manual_round.py` |
-| Operator console: pending queue + `operator_api` wrappers | `test_operator_console.py` |
+| Operator console: pending queue, `operator_api` wrappers, `.csv`/`.xlsx` upload | `test_operator_console.py` |
 
 ---
 
@@ -854,18 +872,19 @@ Full analysis, evaluation tables and the business case are in the BCP report. Th
 | UQ — dispatch paths validated in depth (DEMO_4) | 4 KPIs, one per path + a known-bad stress test |
 | UQ — per-family method fixed with held-out evidence (PROVEN_6) | 6 KPIs; bootstrap-ensemble method lost in every family |
 | Novelty — behaviour at d = 35 | responds to multi-dimensional excursions, not single-input ones (measured both ways) |
-| Loop — real AnyLogic Cloud rounds ingested | 2 (10 + 30 rows) |
-| Loop — training set growth on the record | **129 → 169 rows** |
+| Loop — AnyLogic Cloud rounds ingested | 3 (10 + 30 + 10 rows); 2 more exported and pending |
+| Loop — training set growth on the record | **129 → 179 rows** |
 | Cost baseline being displaced | €2,520 / year AnyLogic Cloud API subscription |
-| Test suites | `nolhc_ml` 9 · `experimenting_ml` 163 · `brexit_ml` 52 (+1 skipped) |
+| Test suites | `nolhc_ml` 9 · `experimenting_ml` 172 · `brexit_ml` 52 (+1 skipped) |
 
-The two real rounds are the concrete demonstration that the "129 is a small dataset" concern is answerable: the dataset now grows through a repeatable, on-the-record process driven by the engine's own trust score.
+The three rounds are the concrete demonstration that the "129 is a small dataset" concern is *mechanically* answerable — the dataset grows through a repeatable, on-the-record process driven by the engine's own trust score. **How much those particular 50 rows are worth is a separate, live question** (meta-model sourcing, §15.2), and per-KPI growth is very uneven (§15.3).
 
 ### 15.2 Limitations
 
-- **Small sample.** 169 rows after two rounds. Predictions are most reliable near dense regions of the training hull; the UI keeps inputs within training-feasible bounds for this reason.
+- **Small sample.** 179 rows after three rounds. Predictions are most reliable near dense regions of the training hull; the UI keeps inputs within training-feasible bounds for this reason.
+- **The September rows may be meta-model output, not DES output — open question for the mentor.** The AnyLogic Cloud *dashboard* route used for the September rounds (and possibly the earlier UI-export route) runs `PostBrexit_Model_ML Meta Model`, a trained surrogate of the simulation, at a fixed seed with a single replication — not the full discrete-event model (spec.md §7 item 22). Nothing already ingested has been reverted, but whether meta-model-sourced points are appropriate training data for this project's *own* surrogate needs a decision before the report leans on the grown-dataset numbers.
 - **Weak KPIs, disclosed.** `TT_IB_DR` (negative R²), `WT_IB_NA_Ross` (very low R²), `TT_OB_DR` (fragile). `TT_IB_DR` is kept in DEMO_4 deliberately, as a low-trust stress test — the trust score correctly reads it as unreliable.
-- **Replication-noise magnitude is assumed**, not measured — the per-replication values behind the original 129 means were not retained. The replication *count* (5 per point) is confirmed.
+- **Replication-noise magnitude is assumed**, not measured — the per-replication values behind the original 129 means were not retained. The replication *count* for the 129 (5 per point) is confirmed; the dashboard growth rounds are single-replication, seed 1.
 - **`tt_ib_lb` in PROVEN_6** benchmarks a standalone Gradient-Boosting model while production registers `stacking` for that KPI — correct for the benchmark, not a drop-in for live prediction. Documented in `proven6.py` and tested.
 - **Deep evidence covers 10 of 20 KPIs** (DEMO_4 + PROVEN_6). The other 10 are served by the generic registry-driven dispatch but do not yet have a dedicated per-family benchmark.
 - **Candidate proposer is a v0 placeholder** — uniform-random within each factor's observed range, not diversity- or uncertainty-directed.
@@ -873,21 +892,23 @@ The two real rounds are the concrete demonstration that the "129 is a small data
 
 ### 15.3 Future scope — adding and removing KPIs and input parameters
 
-The two real rounds surfaced a class of question that will recur whenever the KPI set or the input set changes. These are **data-governance items for the extension roadmap, not defects in the delivered system** — the loop caught every one of them before the value was trusted, which is the mechanism working as designed.
+The growth rounds surfaced a class of question that will recur whenever the KPI set or the input set changes. These are **data-governance items for the extension roadmap, not defects in the delivered system** — the loop caught every one of them before the value was trusted, which is the mechanism working as designed.
 
 | Observation | What it means for future KPI/input changes |
 |---|---|
-| Round 1: four outbound customs-intervention KPIs (`WT_OB_A_GB-Dub/Ross`, `WT_OB_NA_GB-Dub/Ross`) came back as exactly 0.000, traced to a confirmed-zero AS-IS constant — yet the *same* KPIs vary normally in the 30-run batch. | When a KPI is added or re-scoped, its AS-IS baseline constants must be re-confirmed with the simulation owner. `results_validation.py` flags an all-identical column automatically; the extension process should treat such a flag as a required sign-off, not a warning to pass. |
+| Round 1: four outbound customs-intervention KPIs (`WT_OB_A_GB-Dub/Ross`, `WT_OB_NA_GB-Dub/Ross`) came back as exactly 0.000, traced to a confirmed-zero AS-IS constant — yet the *same* KPIs vary normally in the 30-run batch. **Independently reproduced** by the §9.4 browser tool, which named the mechanism: the three outbound-percentage factors our candidate generator never varies sit at the AS-IS zero. | When a KPI is added or re-scoped, its AS-IS baseline constants must be re-confirmed with the simulation owner. `results_validation.py` flags an all-identical column automatically; the extension process should treat such a flag as a required sign-off, not a warning to pass. |
 | Round 2: a *different* four KPIs (`WT_IB_A_Dub`, `WT_IB_A_Ross`, `Uti_DAFM_D`, `Uti_DAFM_R`) came back all-zero on a mapping already proven correct, with no design-input explanation. | KPI ↔ AnyLogic-column mappings need a documented owner and a re-validation step per design wave. Excluded columns are recorded in the round manifest so a later round can fill them. |
-| `uti_dafm_r` coverage fell from 92.3% (n=129) to 64.3% (n=139) after the first round. | Each real round can shift a KPI's uncertainty calibration. The recommended practice (below) is to run `cli_recalibrate_uq_methods` after each round and treat a large coverage move as a trigger to re-fit that KPI's interval and, if needed, revisit its UQ method with the simulation owner. |
-| `round_20260829_181116` (PROVEN_6) exported but not yet run. | Rounds can be queued; the manifest tracks `exported_pending_manual_run` → `ingested` so nothing is lost between sessions. |
+| Round 3 (browser tool) populated only 4 of 20 KPIs — the resource-utilisation scalars — because the dashboard export has no transportation-time series and only un-combined check-time sub-components (§9.4). | Any automated data route must be checked KPI-by-KPI for what it can actually supply; a route that grows 4 columns and leaves 16 `NaN` skews per-KPI row counts hard. Per-KPI counts now range from **129 (`wt_ob_lb`, never populated) to 179**. |
+| Four factors (`NA_Im_LB`, `NA_Ex_LB`, `A_Im_LB`, `A_Ex_LB`) were mis-labelled "no AnyLogic field" from 28-Aug until 6-Sep, on a reasoned inference rather than a dashboard check. `round_20260827_161725` (already ingested) was hand-entered with those four skipped — their true AnyLogic-side values for those 10 rows are unknown. | Field mappings must be confirmed against the live model, not inferred. A mapping correction can retroactively taint already-ingested rows; the fix is not always a re-run, but the affected rows should be marked. |
+| `uti_dafm_r` coverage fell from 92.3% (n=129) to 64.3% (n=139) after the first round. | Each real round can shift a KPI's uncertainty calibration. Run `cli_recalibrate_uq_methods` after each round and treat a large coverage move as a trigger to re-fit that KPI's interval and, if needed, revisit its UQ method with the simulation owner. |
+| `round_20260829_181116` (PROVEN_6) and `round_20260906_103618` (DEMO_4) exported but not yet run. | Rounds can be queued; the manifest tracks `exported_pending_manual_run` → `ingested` so nothing is lost between sessions. |
 | The 89 "constant" AnyLogic fields are the author's well-grounded understanding, not a direct statement from the simulation owner. | Confirm the constant set with the simulation owner before the next design wave; the constants worklist is the single document to check against. |
 
 ### 15.4 Engineering items
 
 - The uncertainty display and the operator console (Section 13) are delivered in `experimenting_ml`; promotion into the `nolhc_ml` production UI is a later decision.
 - The environment is pinned by lock file but not yet containerised.
-- Automated AnyLogic Cloud execution (§9.4) is **under development** by Sakshi Dhamane — it will replace the manual data-entry step with a credential-driven Cloud driver returning the completed results workbook. To be added under `experimenting_ml/src/loop/des_backend/` on delivery.
+- A browser-automation prototype for AnyLogic Cloud (§9.4) exists (Sakshi Dhamane) and has produced one round, but is not committed, not integrated, and its dashboard route runs a meta-model rather than the DES — an open question before its data is relied on.
 
 ---
 
@@ -903,7 +924,7 @@ Priority order, for the client and any inheriting engineer:
 6. **Lock the per-family UQ methods** from PROVEN_6 into production; `tt_ob_lb` currently flags for review on the grown data.
 7. **Add input-range governance** so the UI cannot silently extrapolate outside the training hull.
 8. **Replace the v0 candidate proposer** with diversity- / uncertainty-directed batch selection.
-9. **Integrate the automated AnyLogic Cloud driver (§9.4)** once delivered — as a third DES backend behind the existing interface, with credentials supplied only through an untracked secrets file, so the loop can run round-to-round without manual data entry.
+9. **Resolve the meta-model-vs-DES question (§9.4, §15.2), then integrate the browser-automation prototype** — confirm with the mentor whether dashboard-meta-model rows are acceptable training data; if so, wire the prototype in as a third DES backend behind the existing interface, with credentials only from an untracked secrets file, and extend its KPI coverage past the current 4.
 10. **Freeze the environment** with a container image built from the three lock files.
 11. **Consolidate to one authoritative UI**, and roadmap the DEMO_4 / PROVEN_6 depth of evidence out to all 20 KPIs.
 
@@ -993,7 +1014,7 @@ cd experimenting_ml ; .venv\Scripts\python run_ui_inference_api.py --port 8000
 
 **The 35 inputs** (order per `nolhc_ml/src/training_columns.py`): `NA_Im`, `NA_Ex`, `A_Im`, `A_Ex`, `Shift_NA_Im_LB_to_Cher`, `NA_Im_LB`, `NA_Im_DR`, `Shift_NA_Ex_LB_to_Cher`, `NA_Ex_LB`, `NA_Ex_DR`, `Shift_A_Im_LB_to_Cher`, `A_Im_LB`, `A_Im_DR`, `Shift_A_Ex_LB_to_Cher`, `A_Ex_LB`, `A_Ex_DR`, `VCap_Dub_Hey`, `VCap_Dub_Holy`, `VCap_Dub_Liv`, `VCap_Ross_Fish`, `VCap_Ross_Pem`, `ChkTime_Doc`, `ChkTime_Phy`, `NumCusShed_D`, `NumDAFM_D`, `NumCusShed_R`, `NumDAFM_R`, `Pct_NA_OB_Green`, `Pct_NA_OB_Red`, `Pct_A_OB_Red`, `Pct_NA_IB_Green`, `Pct_NA_IB_Red`, `Pct_A_IB_Red`, `Pct_IB_PreBoard`, `Pct_OB_PreBoard`.
 
-Groups: trade volume (agri / non-agri, import / export); landbridge-vs-direct-route shift volumes and split volumes; vessel capacities on the Dublin and Rosslare GB links; customs document / physical check times; customs shed and DAFM bay counts at each port; green / red / pre-board routing fractions for inbound and outbound flows. Seven factors have no AnyLogic field and are left blank in a manual run (`Pct_NA_OB_Green/Red`, `Pct_A_OB_Red`, `NA_Im_LB`, `NA_Ex_LB`, `A_Im_LB`, `A_Ex_LB`).
+Groups: trade volume (agri / non-agri, import / export); landbridge-vs-direct-route shift volumes and split volumes; vessel capacities on the Dublin and Rosslare GB links; customs document / physical check times; customs shed and DAFM bay counts at each port; green / red / pre-board routing fractions for inbound and outbound flows. **Three** factors have no AnyLogic field and are left blank in a manual run: `Pct_NA_OB_Green`, `Pct_NA_OB_Red`, `Pct_A_OB_Red`. (Was seven until 6 September — the four landbridge volumes `NA_Im_LB` / `NA_Ex_LB` / `A_Im_LB` / `A_Ex_LB` were found to map to the `Vol*ViaRott` fields; §9.2.) In AnyLogic Cloud, 27 of the 35 factors are Integer-typed and the worklist rounds them; only the 8 percentage / fraction factors carry a decimal.
 
 **The 20 KPIs** (raw keys): `TT_OB_Agri`, `WT_OB_A_GB-Dub`, `WT_OB_A_GB-Ross`, `TT_IB_Agri`, `WT_IB_A_Dub`, `WT_IB_A_Ross`, `WT_IB_NA_Dub`, `WT_OB_NA_GB-Dub`, `WT_IB_NA_Ross`, `WT_OB_NA_GB-Ross`, `TT_OB_LB`, `WT_OB_LB`, `TT_IB_LB`, `WT_IB_LB`, `TT_OB_DR`, `TT_IB_DR`, `Uti_Cus_D`, `Uti_DAFM_D`, `Uti_Cus_R`, `Uti_DAFM_R`.
 
