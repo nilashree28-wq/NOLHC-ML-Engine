@@ -68,13 +68,18 @@ class ComputeRawValuesFormulaTests(unittest.TestCase):
         row = X_df.iloc[0]
         raw, _conflicts = compute_raw_values(row)
 
-        self.assertAlmostEqual(raw["VolAgriImViaChe"], 301281.22, places=1)
-        self.assertAlmostEqual(raw["VolAgriImEULB"], 127676.22, places=1)
+        # 6-Sep finding: these are non-percentage (Integer-typed in
+        # AnyLogic) raw fields, now rounded to the nearest whole number
+        # before being handed to a human to type in -- compare against the
+        # ROUNDED expected value, not the pre-rounding mentor-sheet figure.
+        self.assertEqual(raw["VolAgriImViaChe"], round(301281.22))
+        self.assertEqual(raw["VolAgriImEULB"], round(127676.22))
         # current code path: direct passthrough of the NA_Im_DR column, not
         # a re-derivation -- confirmed to equal the formula's result too
-        # (same underlying quantity, sourced two different ways in the raw file)
-        self.assertEqual(raw["VolAllPImViaChe"], row["NA_Im_DR"])
-        self.assertAlmostEqual(raw["VolAllPImViaChe"], row["Shift_NA_Im_LB_to_Cher"] + 223000, places=6)
+        # (same underlying quantity, sourced two different ways in the raw
+        # file), modulo the same integer rounding.
+        self.assertEqual(raw["VolAllPImViaChe"], round(row["NA_Im_DR"]))
+        self.assertEqual(raw["VolAllPImViaChe"], round(row["Shift_NA_Im_LB_to_Cher"] + 223000))
 
     def test_direct_passthrough(self):
         c = _candidate(NA_Im=42.0)
@@ -82,11 +87,27 @@ class ComputeRawValuesFormulaTests(unittest.TestCase):
         self.assertEqual(raw["VolAllPImGB"], 42.0)
 
     def test_one_factor_fans_out_to_several_raw_names(self):
-        c = _candidate(ChkTime_Doc=7.5)
+        c = _candidate(ChkTime_Doc=8.0)  # non-percentage factor -- use a value that survives rounding exactly
         raw, _ = compute_raw_values(c)
         for name in ["DocChkTimeAPImIR", "DocChkTimeAgriImIR", "DocChkTimeAPImGB-W",
                       "DocChkTimeAgriImGB-W", "DocCheckTimeImGB-E", "DocCheckTimeImEU"]:
-            self.assertEqual(raw[name], 7.5)
+            self.assertEqual(raw[name], 8)
+
+    def test_non_percentage_raw_fields_round_to_nearest_integer(self):
+        """6-Sep finding: manually entering an exported candidate's values
+        into AnyLogic Cloud threw "must be integer" errors -- AnyLogic's
+        own field types only allow decimals for the percentage/fraction
+        fields. Every volume/count/capacity/check-time field must be a
+        whole number."""
+        c = _candidate(ChkTime_Doc=7.6, NumCusShed_D=3.4, VCap_Dub_Hey=100.5)
+        raw, _ = compute_raw_values(c)
+        self.assertEqual(raw["DocChkTimeAPImIR"], 8)  # 7.6 -> 8
+        self.assertEqual(raw["NumCustomOfficerD"], 3)  # 3.4 -> 3
+        self.assertIsInstance(raw["NumCustomOfficerD"], int)
+        # percentage fields must NOT be rounded
+        c2 = _candidate(Pct_NA_IB_Red=0.234, Pct_A_IB_Red=0.234)
+        raw2, _ = compute_raw_values(c2)
+        self.assertAlmostEqual(raw2["PerPhyChkImGB-E"], 0.234)
 
     def test_agreeing_shared_raw_names_produce_no_conflict(self):
         c = _candidate(Pct_NA_IB_Red=0.2, Pct_A_IB_Red=0.2)
@@ -115,17 +136,27 @@ class ComputeRawValuesFormulaTests(unittest.TestCase):
         for name in raw:
             self.assertNotIn(name, NO_ANYLOGIC_EQUIVALENT)
 
-    def test_seven_factors_have_no_anylogic_equivalent(self):
-        """3 outbound-percentage factors (spec.md section 7 item 9) + 4
-        landbridge-side volumes (NA_Im_LB and siblings, section 7 item 11) --
-        up from 3, corrected 28-Aug."""
+    def test_three_factors_have_no_anylogic_equivalent(self):
+        """Only the 3 outbound-percentage factors (spec.md section 7 item 9).
+        Was 7 (4 more -- the landbridge-side volumes) from 28-Aug until
+        6-Sep, when an independent live-dashboard check (a separate
+        browser-automation tool, AUTOMATION_REPORT.md) showed those 4 DO
+        map to real fields (the ViaRott columns) -- corrected, spec.md
+        section 7 item 23. See FACTOR_TO_RAW for the real mapping."""
         self.assertEqual(
             NO_ANYLOGIC_EQUIVALENT,
-            frozenset({
-                "Pct_NA_OB_Green", "Pct_NA_OB_Red", "Pct_A_OB_Red",
-                "NA_Im_LB", "NA_Ex_LB", "A_Im_LB", "A_Ex_LB",
-            }),
+            frozenset({"Pct_NA_OB_Green", "Pct_NA_OB_Red", "Pct_A_OB_Red"}),
         )
+
+    def test_landbridge_volumes_map_to_the_via_rott_fields(self):
+        """The 6-Sep correction itself: NA_Im_LB/NA_Ex_LB/A_Im_LB/A_Ex_LB
+        now map to the confirmed real dashboard fields, not "no field"."""
+        c = _candidate(NA_Im_LB=111.0, NA_Ex_LB=222.0, A_Im_LB=333.0, A_Ex_LB=444.0)
+        raw, _ = compute_raw_values(c)
+        self.assertEqual(raw["VolAllPImViaRott"], 111)
+        self.assertEqual(raw["VolAllPExViaRott"], 222)
+        self.assertEqual(raw["VolAgriImViaRott"], 333)
+        self.assertEqual(raw["VolAgriExViaRott"], 444)
 
 
 class ConstantsTests(unittest.TestCase):
@@ -226,6 +257,22 @@ class ExportRunRequestsCsvTests(unittest.TestCase):
         backend = ManualWorklistDESBackend(constants={})
         with self.assertRaises(ValueError):
             backend.export_run_requests_csv(candidates, n_replications=0, seed=1, out_path=self.out_path)
+
+    def test_non_percentage_columns_are_integers_percentage_columns_stay_decimal(self):
+        """6-Sep finding: a human hit "must be integer" errors in AnyLogic
+        Cloud entering a previously-exported candidate's raw float values.
+        Every non-percentage factor's CSV value must now be a whole number;
+        the 8 percentage factors must NOT be rounded."""
+        candidates = pd.DataFrame(
+            [_candidate(NA_Im=5921300.242459027, Pct_NA_IB_Red=0.37741050016596667)],
+            index=["run_a"],
+        )
+        backend = ManualWorklistDESBackend(constants={})
+        out = backend.export_run_requests_csv(candidates, n_replications=1, seed=1, out_path=self.out_path)
+
+        df = pd.read_csv(out)
+        self.assertEqual(df.loc[0, "VolAllPImGB"], 5921300)  # NA_Im -- non-percentage, rounded
+        self.assertAlmostEqual(df.loc[0, "PerPhyChkAPImIR"], 0.37741050016596667)  # Pct_NA_IB_Red's canonical column -- percentage, untouched
 
 
 class IngestResultsTests(unittest.TestCase):

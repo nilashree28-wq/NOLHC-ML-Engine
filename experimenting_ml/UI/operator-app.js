@@ -118,7 +118,10 @@ async function buildRound() {
   out.innerHTML = `<div class="op-running">Proposing, scoring, flagging…</div>`;
   try {
     const payload = {
-      kpi_scope: $("#op-scope").value,
+      // Fixed to all20 (operator.html) -- PROVEN_6 is a one-off, mentor-benchmarked
+      // exercise, not a repeatable scope choice; DEMO_4 is strictly narrower than
+      // all20 for the same generic mechanism, so there's no reason to pick it here.
+      kpi_scope: "all20",
       n_candidates: Number($("#op-ncand").value),
       quantile: Number($("#op-quantile").value),
       max_batch_size: Number($("#op-batch").value),
@@ -161,19 +164,36 @@ async function refreshIngestRounds() {
   } catch { /* ignore */ }
 }
 
+function _bufferToBase64(buf) {
+  let binary = "";
+  const bytes = new Uint8Array(buf);
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
 async function ingestResults() {
   const out = $("#op-ingest .op-ingest-result");
   const btn = $("#op-ingest-btn");
   const roundId = $("#op-ingest-round").value;
-  let text = $("#op-ingest-text").value.trim();
+  const text = $("#op-ingest-text").value.trim();
   const file = $("#op-ingest-file").files[0];
   if (!roundId) { out.innerHTML = `<div class="op-error">Pick a round.</div>`; return; }
-  if (file) text = await file.text();
-  if (!text) { out.innerHTML = `<div class="op-error">Paste or upload a results CSV.</div>`; return; }
+  if (!file && !text) { out.innerHTML = `<div class="op-error">Paste CSV text, or upload a results file (.csv/.xlsx).</div>`; return; }
   btn.disabled = true;
   out.innerHTML = `<div class="op-running">Validating &amp; ingesting…</div>`;
   try {
-    const d = await api("/api/operator/round/ingest", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ round_id: roundId, results_csv: text }) });
+    // A real result export is normally a binary .xlsx, not plain text --
+    // read it as bytes and base64-encode for the JSON transport (6-Sep
+    // fix) rather than file.text(), which corrupts anything non-CSV.
+    // Pasted textarea content stays plain text -- it genuinely is text.
+    const payload = { round_id: roundId };
+    if (file) {
+      payload.results_content_b64 = _bufferToBase64(await file.arrayBuffer());
+      payload.filename = file.name;
+    } else {
+      payload.results_csv = text;
+    }
+    const d = await api("/api/operator/round/ingest", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     out.innerHTML = "";
     out.append(
       h("div", { class: "op-okbox" },

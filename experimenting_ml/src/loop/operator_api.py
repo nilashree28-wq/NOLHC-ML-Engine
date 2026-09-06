@@ -9,6 +9,7 @@ cli_recalibrate_uq_methods.py.
 
 from __future__ import annotations
 
+import base64
 import io
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -170,7 +171,27 @@ def worklist_bytes(round_id: str) -> Optional[bytes]:
 # Ingest results
 # ────────────────────────────────────────────────────────────────────────
 
-def ingest_round(round_id: str, results_csv_text: str) -> Dict[str, Any]:
+def ingest_round(
+    round_id: str,
+    results_csv_text: Optional[str] = None,
+    results_content_b64: Optional[str] = None,
+    filename: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Two ways in, same underlying file write (6-Sep finding): a real
+    AnyLogic Cloud export is normally an .xlsx, not a .csv -- the UI
+    originally only accepted pasted/typed CSV text (results_csv_text,
+    written with write_text()), which silently corrupts a real .xlsx
+    upload (a binary, zip-based format) if it's ever routed through it.
+    results_content_b64 + filename is the real-file path: the raw bytes,
+    base64-encoded for the JSON transport, written back out with
+    write_bytes() under the UPLOADED file's own extension so
+    ManualWorklistDESBackend.ingest_results() -- already .csv/.xlsx-aware,
+    same as the CLI path -- picks the right parser. results_csv_text
+    stays supported for the "paste CSV text into the textarea" case,
+    which is genuinely plain text and never needs this."""
+    if results_csv_text is None and results_content_b64 is None:
+        return {"ok": False, "error": "No results provided -- paste CSV text or choose a file."}
+
     manifest = dataset_store.load_manifest()
     entry = next((e for e in manifest if e["round_id"] == round_id), None)
     if entry is None:
@@ -180,8 +201,36 @@ def ingest_round(round_id: str, results_csv_text: str) -> Dict[str, Any]:
 
     rdir = dataset_store.round_dir(round_id)
     rdir.mkdir(parents=True, exist_ok=True)
-    results_path = rdir / "results.csv"
-    results_path.write_text(results_csv_text)
+
+    if results_content_b64 is not None:
+        try:
+            raw_bytes = base64.b64decode(results_content_b64, validate=True)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "error": f"Uploaded file could not be decoded: {e}"}
+        # 6-Sep finding #2: a real export was named "*.csv" but its actual
+        # content was a genuine .xlsx (a ZIP archive) -- the extension
+        # lied. Trusting Path(filename).suffix alone would have handed
+        # binary ZIP bytes to pandas.read_csv and failed or produced
+        # garbage. .xlsx/.xls files always start with a recognisable
+        # magic number regardless of what they're named, so sniff that
+        # FIRST and only fall back to the filename's own extension when
+        # the content doesn't look like a spreadsheet binary at all
+        # (i.e. it's plausibly real CSV text).
+        ZIP_MAGIC = (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")  # .xlsx (zip-based)
+        OLE_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"  # legacy .xls (OLE2)
+        if raw_bytes[:4] in ZIP_MAGIC:
+            suffix = ".xlsx"
+        elif raw_bytes[:8] == OLE_MAGIC:
+            suffix = ".xls"
+        else:
+            suffix = Path(filename).suffix.lower() if filename else ""
+            if suffix not in (".csv", ".xlsx", ".xls"):
+                suffix = ".csv"  # content doesn't look like a spreadsheet binary -- treat as text
+        results_path = rdir / f"results{suffix}"
+        results_path.write_bytes(raw_bytes)
+    else:
+        results_path = rdir / "results.csv"
+        results_path.write_text(results_csv_text)
 
     kpi_slugs = entry["kpi_slugs"]
     kpi_scope = entry.get("kpi_scope", "demo4")

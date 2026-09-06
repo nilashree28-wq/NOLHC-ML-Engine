@@ -40,6 +40,7 @@
 .op-form label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--slate-400); }
 .op-form input, .op-form select { background: var(--slate-800); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--slate-200); padding: 6px 8px; font-size: 12px; min-width: 90px; }
 .op-form select { min-width: 220px; }
+.op-scope-fixed { background: var(--slate-800); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--slate-400); padding: 6px 8px; font-size: 12px; min-width: 220px; cursor: default; }
 .op-form .op-check, .op-form .op-file { flex-direction: row; align-items: center; gap: 6px; }
 
 textarea#op-ingest-text {

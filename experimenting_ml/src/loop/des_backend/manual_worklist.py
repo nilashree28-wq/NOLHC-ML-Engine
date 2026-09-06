@@ -100,27 +100,84 @@ FACTOR_TO_RAW: Dict[str, List[str]] = {
                          "PerSecurityChkGB-E", "PerSecurityChkEU"],
     "Pct_OB_PreBoard": ["PerSecurityChkAgriIR", "PerSecurityChkAgriGB-W",
                          "PerSecurityChkGB-E", "PerSecurityChkEU"],
+    # Correction, 6-Sep (spec.md §7 item 23): these 4 were wrongly marked
+    # NO_ANYLOGIC_EQUIVALENT below -- that was a reasoned inference from
+    # 28-Aug ("landbridge volume must be a residual AnyLogic computes
+    # internally"), never a live dashboard check. A separate, independently
+    # -built browser-automation tool inspected the real, live dashboard
+    # field list (discovered/inputs.json) and confirmed these ARE real
+    # fields, under different names than our own -- the Rotterdam-direct
+    # ("ViaRott") volumes, not a residual at all. Confirmed by more than a
+    # label match: the tool successfully set these exact fields on 10 real
+    # candidates and completed all 10 runs (round_20260906_090349,
+    # AUTOMATION_REPORT.md §7.1/§9). Every worklist exported before this fix
+    # told a human to skip these 4 fields -- real, retroactive concern for
+    # any round entered by hand before today, spec.md §7 item 23.
+    "NA_Im_LB": ["VolAllPImViaRott"],
+    "NA_Ex_LB": ["VolAllPExViaRott"],
+    "A_Im_LB": ["VolAgriImViaRott"],
+    "A_Ex_LB": ["VolAgriExViaRott"],
 }
 
-# One canonical AnyLogic column name per factor, for the flat CSV (28
-# factors -- the other 7 have no AnyLogic field at all, see below).
+# One canonical AnyLogic column name per factor, for the flat CSV (32
+# factors -- the other 3 have no AnyLogic field at all, see below).
 CANONICAL_CSV_COLUMN: Dict[str, str] = {factor: raw_names[0] for factor, raw_names in FACTOR_TO_RAW.items()}
 
-# Confirmed: 7 of our 35 factors have no AnyLogic field to write to.
-#   - 3 outbound truck-check percentages (user-confirmed 28-Aug, spec.md §7 item 9)
-#   - 4 landbridge-side volumes (NA_Im_LB and siblings) -- landbridge volume
-#     has no separate raw input; AnyLogic computes it as the residual after
-#     every named direct-route volume (spec.md §7 item 1)
+# Confirmed: only 3 of our 35 factors have no AnyLogic field to write to --
+# 3 outbound truck-check percentages (user-confirmed 28-Aug, spec.md §7 item 9).
+# Was 7 (4 more, the landbridge-side volumes) until 6-Sep -- corrected,
+# spec.md §7 item 23, once a live dashboard check showed those 4 DO map to
+# real fields (the ViaRott columns), just not what this repo assumed.
 # The flat CSV still includes a column for each (per "35 parameter values"),
 # headed by OUR OWN factor name since there's no AnyLogic name to use --
 # documented in spec.md as "present for completeness, leave blank / ignore
 # in AnyLogic."
 NO_ANYLOGIC_EQUIVALENT = frozenset({
     "Pct_NA_OB_Green", "Pct_NA_OB_Red", "Pct_A_OB_Red",
-    "NA_Im_LB", "NA_Ex_LB", "A_Im_LB", "A_Ex_LB",
 })
 
 ALL_35_FACTORS: List[str] = sorted(set(FACTOR_TO_RAW) | NO_ANYLOGIC_EQUIVALENT)
+
+# Real finding, 6-Sep: manually typing an exported candidate's values into
+# AnyLogic Cloud threw "must be integer" errors. AnyLogic's own field types
+# only allow decimals for the percentage/fraction fields -- every volume,
+# staff count, vessel capacity, and check-duration field is Integer-typed,
+# not Double. Our candidate proposer samples every factor as a continuous
+# float (uniform-random within each factor's observed range), so every
+# non-percentage factor needs rounding before it's written anywhere a human
+# will copy it into AnyLogic -- it was never rounded before this.
+#
+# 8 of the 35 factors are the percentage/fraction ones (decimal-allowed):
+# the 5 inbound-side ones in FACTOR_TO_RAW (their raw AnyLogic field names
+# all start with "Per" -- PerPhyChk*/PerSecurityChk*/PerGreenTrucks*, a
+# reliable, checked naming convention across every entry in that dict) plus
+# the 3 outbound-side ones that have no AnyLogic field at all. Every other
+# factor (volumes, vessel capacities, staff counts, check-time minutes) is
+# Integer-typed in AnyLogic and gets rounded to the nearest whole number.
+PERCENTAGE_FACTORS: frozenset = frozenset(
+    {f for f, raw_names in FACTOR_TO_RAW.items() if raw_names[0].startswith("Per")}
+    | {"Pct_NA_OB_Green", "Pct_NA_OB_Red", "Pct_A_OB_Red"}
+)
+
+
+def _anylogic_value(factor: str, value: float):
+    """The value to actually write for one factor -- decimal for the 8
+    percentage factors, rounded to a plain int for the other 27 (AnyLogic's
+    own field-type constraint, not a choice we're making). Returns a real
+    Python int, not a rounded float, so the CSV/worksheet shows "5921300"
+    rather than "5921300.0" -- the latter still reads as ambiguous to
+    whoever's typing it into an Integer-typed AnyLogic field by hand."""
+    if factor in PERCENTAGE_FACTORS:
+        return value
+    return int(round(value))
+
+
+def _is_percentage_raw_field(raw_field_name: str) -> bool:
+    """Same rule as PERCENTAGE_FACTORS, applied to a raw AnyLogic field name
+    directly (for compute_raw_values()'s output, which is keyed by raw field
+    name, not our own factor name) -- every percentage raw field in
+    FACTOR_TO_RAW starts with "Per", checked against the full dict above."""
+    return raw_field_name.startswith("Per")
 
 
 def load_constants(path: Optional[Path] = None) -> Dict[str, float]:
@@ -162,9 +219,15 @@ def compute_raw_values(candidate: pd.Series) -> Tuple[Dict[str, float], Dict[str
         values = {v for _, v in contribs}
         if len(values) > 1:
             conflicts[name] = contribs
-            raw[name] = sum(v for _, v in contribs) / len(contribs)
+            value = sum(v for _, v in contribs) / len(contribs)
         else:
-            raw[name] = contribs[0][1]
+            value = contribs[0][1]
+        # AnyLogic's own field-type constraint (6-Sep finding, see
+        # PERCENTAGE_FACTORS above) -- every non-percentage raw field is
+        # Integer-typed, so round it here, after any conflict-averaging,
+        # not before (averaging two already-rounded values could otherwise
+        # produce a spurious .5).
+        raw[name] = value if _is_percentage_raw_field(name) else int(round(value))
 
     return raw, conflicts
 
@@ -183,7 +246,13 @@ class ManualWorklistDESBackend:
         """Mentor-specified flat CSV (spec.md §7 item 11): one row per
         requested run -- run_id, the 35 parameter values (AnyLogic column
         names where one exists, our own factor name otherwise), n_replications,
-        seed. This is the canonical machine-readable request record."""
+        seed. This is the canonical machine-readable request record.
+
+        Values are rounded per PERCENTAGE_FACTORS (6-Sep finding): 27 of the
+        35 factors are Integer-typed fields in AnyLogic Cloud and were
+        previously written as raw floats, which AnyLogic's manual-entry form
+        rejects outright ("must be integer"). Only the 8 percentage/fraction
+        factors keep their decimal value."""
         if candidates.empty:
             raise ValueError("candidates is empty")
         if n_replications < 1:
@@ -203,7 +272,7 @@ class ManualWorklistDESBackend:
             writer = csv.writer(f)
             writer.writerow(header)
             for run_id, row in candidates.iterrows():
-                values = [row[f] for f in ALL_35_FACTORS]
+                values = [_anylogic_value(f, row[f]) for f in ALL_35_FACTORS]
                 writer.writerow([run_id] + values + [n_replications, seed])
 
         return out_path

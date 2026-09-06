@@ -953,7 +953,10 @@ class Handler(SimpleHTTPRequestHandler):
                 ))
             elif path == "/api/operator/round/ingest":
                 self._json(operator_api.ingest_round(
-                    str(body["round_id"]), str(body["results_csv"])
+                    str(body["round_id"]),
+                    results_csv_text=body.get("results_csv"),
+                    results_content_b64=body.get("results_content_b64"),
+                    filename=body.get("filename"),
                 ))
             elif path == "/api/operator/pending/dismiss":
                 self._json(operator_api.pending_dismiss(str(body["entry_id"])))
