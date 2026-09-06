@@ -75,6 +75,7 @@ timeline
     May to Jun 2026 : SHAP explainability layer and XAI crosswalk : LLM persona-attribution layer : Paper scaffold
     Jul 2026 : Due-diligence report : Public GitHub repository
     Aug 2026 : Uncertainty phase - SOTA review, 3-path UQ dispatch, novelty scorer, unified trust score : Synthetic and manual DES backends, dataset store, batch-sequential loop : PROVEN_6 per-family UQ-method benchmark
+    Aug to Sep 2026 : Scenario UI updated - conformal intervals and trust strip on the KPI cards : Operator console added under Settings - dataset status, pending review, build round, ingest, recalibration : Optional loop wiring so the UI degrades gracefully
     Sep 2026 : Two real AnyLogic Cloud rounds ingested, 129 to 169 rows : Results validation and recalibration check : v0 development freeze
 ```
 
@@ -99,7 +100,8 @@ The engine could predict fast but could not say **when to trust a prediction**, 
 - a **novelty / out-of-distribution scorer** on the 35-dimensional input hull;
 - a single **trust score** combining UQ width and novelty, with a per-KPI "accept the ML prediction / refer to AnyLogic" decision;
 - a **batch-sequential loop**: propose candidate scenarios → score them → flag the untrustworthy ones → export a worklist → run them in AnyLogic → ingest the results → append to the training set → retrain → recalibrate;
-- **PROVEN_6**, a per-model-family benchmark that fixes one UQ method per family with empirical evidence.
+- **PROVEN_6**, a per-model-family benchmark that fixes one UQ method per family with empirical evidence;
+- **the scenario UI updated** (August–September) so the reliability signal is visible where decisions are made: conformal intervals and a trust strip on the KPI cards, and an **operator console** under Settings that runs the dataset-growth loop as a screen (Section 13). The additions are purely additive — the existing screening flow, governance layer and endpoints are untouched.
 
 By the 5–6 September freeze, **two real AnyLogic Cloud rounds** had been run by hand and ingested, growing the training set from **129 to 169 rows** on the record.
 
