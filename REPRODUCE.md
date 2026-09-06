@@ -5,7 +5,7 @@ post-Brexit AnyLogic border-control simulation, February–September 2026. This
 file is the operational entry point: how to stand the project up from a clean
 clone, what regenerates deterministically, and what depends on external
 services. A prose walkthrough for a new analyst is in
-`docs/NOLHC_ML_Engine_Technical_Report.*` (once drafted).
+`docs/NOLHC_ML_Engine_Technical_Report.md`.
 
 ---
 
@@ -50,7 +50,7 @@ python3.8 -m venv .venv
 
 ```bash
 cd nolhc_ml        && ./.venv/bin/python -m pytest -q     #   9 passed
-cd experimenting_ml && ./.venv/bin/python -m pytest -q    # 156 passed  (pytest.ini scopes to tests/)
+cd experimenting_ml && ./.venv/bin/python -m pytest -q    # 163 passed  (pytest.ini scopes to tests/)
 cd brexit_ml       && ./.venv/bin/python -m pytest -q     #  52 passed, 1 skipped
 ```
 
@@ -146,10 +146,17 @@ python -m loop.cli_recalibrate_uq_methods       # read-only; flags REVIEW NEEDED
 ```bash
 cd experimenting_ml
 ./.venv/bin/python run_ui_inference_api.py --port 8000
-#   http://localhost:8000/UI/index.html
-#   POST /api/infer   /api/predict   GET /api/health  /api/meta
-#   /api/infer returns prediction + SHAP + conformal interval + coverage
+#   simulator          http://localhost:8000/UI/index.html
+#   settings           http://localhost:8000/UI/settings.html
+#   operator console   http://localhost:8000/UI/operator.html
+#   POST /api/infer /api/predict   GET /api/health /api/meta   /api/operator/*
 ```
+
+`/api/predict` returns prediction + SHAP + conformal interval + coverage + a
+`reliability` block (novelty + accept/verify); the simulator draws these on the
+KPI cards. The operator console (technical report §13) runs the dataset-growth
+loop as a screen — dataset status, pending review, build round, ingest results,
+recalibration check. Its runtime state is `data/operator/` (git-ignored).
 
 The `UI/*.xlsx` files are **config data read by the server** (scenario mapping,
 dynamic-parameter tables) — not scratch; leave them in `UI/`.
@@ -191,7 +198,7 @@ workbooks above are the format reference and the field/constant mapping.
 
 > All code, tests, and the full modelling methodology reproduce from a clean
 > clone on the committed Python 3.8.10 lock files (verified 2026-09-06:
-> nolhc_ml 9 tests, experimenting_ml 156, brexit_ml 52; both UIs and the loop
+> nolhc_ml 9 tests, experimenting_ml 163, brexit_ml 52; both UIs and the loop
 > CLIs live; `train.py` regenerated all 20/20 per-KPI winners exactly). Trained
 > artifacts and the grown 169-row training set are committed for immediate use.
 > The AnyLogic simulation and live-LLM narration require their external services.

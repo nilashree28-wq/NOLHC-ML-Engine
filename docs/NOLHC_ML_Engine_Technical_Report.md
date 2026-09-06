@@ -23,7 +23,7 @@
 10. [Reproducing the results](#10-reproducing-the-results)
 11. [Launching the user interfaces from the terminal](#11-launching-the-user-interfaces-from-the-terminal)
 12. [Extending the model for new inputs and new KPIs](#12-extending-the-model-for-new-inputs-and-new-kpis)
-13. [Proposed operator console for dataset growth and uncertainty monitoring](#13-proposed-operator-console-for-dataset-growth-and-uncertainty-monitoring)
+13. [Operator console for dataset growth and uncertainty monitoring](#13-operator-console-for-dataset-growth-and-uncertainty-monitoring)
 14. [Testing and quality assurance](#14-testing-and-quality-assurance)
 15. [Experimental results, limitations and future scope](#15-experimental-results-limitations-and-future-scope)
 16. [Recommended next steps](#16-recommended-next-steps)
@@ -368,7 +368,7 @@ Each stage below lists the file(s), the command, and the kind of artifact it pro
 ### 7.5 Split-conformal prediction intervals (baseline UQ)
 
 - **File:** `experimenting_ml/src/conformal_predict.py`
-- **What happens:** for each KPI, an inductive split-conformal interval is calibrated from the hold-out residuals with an adaptive coverage level (0.90 / 0.95 / 0.99 depending on how close the model's RMSE is to the best model for that KPI). These intervals are computed and **returned by the inference API today** but are not yet drawn by either UI frontend (see Section 13).
+- **What happens:** for each KPI, an inductive split-conformal interval is calibrated from the hold-out residuals with an adaptive coverage level (0.90 / 0.95 / 0.99 depending on how close the model's RMSE is to the best model for that KPI). These intervals are computed and returned by the inference API, and the simulator now draws them on the KPI cards (Section 13).
 - **Produces:** `outputs/conformal_results.json` / `.csv`.
 
 ### 7.6 Retrain and hold-out evaluation
@@ -522,7 +522,7 @@ done
 
 ```bash
 cd nolhc_ml         && ./.venv/bin/python -m pytest -q     #   9 passed
-cd experimenting_ml && ./.venv/bin/python -m pytest -q     # 156 passed
+cd experimenting_ml && ./.venv/bin/python -m pytest -q     # 163 passed
 cd brexit_ml        && ./.venv/bin/python -m pytest -q     #  52 passed, 1 skipped
 ```
 
@@ -580,7 +580,7 @@ cd experimenting_ml
 
 Endpoints: `POST /api/infer`, `POST /api/predict`, `GET /api/health`, `GET /api/meta`.
 
-`/api/infer` already returns, per KPI: the prediction, its SHAP drivers, the **conformal interval `{lower, upper, width}`**, `coverage_level`, and `empirical_coverage`. The frontend does not yet draw the interval or coverage — Section 13 proposes the console that will.
+`/api/infer` and `/api/predict` return, per KPI: the prediction, its SHAP drivers, the **conformal interval `{lower, upper, width}`**, `coverage_level`, `empirical_coverage`, and (since September) a `reliability` block with the novelty score and the overall accept/verify decision. The simulator draws these; the operator console (Section 13) uses the same data.
 
 ### 11.3 The governance layer
 
@@ -628,88 +628,76 @@ The entire methodology, the benchmarking harness, the UQ dispatch, the SHAP loop
 
 ---
 
-## 13. Proposed operator console for dataset growth and uncertainty monitoring
+## 13. Operator console for dataset growth and uncertainty monitoring
 
-This section is a **design**, not delivered code. It specifies how to make the twice-weekly dataset-growth cycle (Section 9) a screen instead of a command line, and how to surface the uncertainty the API already computes. It realises two recommendations the BCP report already carries: *"wire UQ into the UI"* and *"adopt the loop as standing practice."*
+Delivered (6 September 2026). This turns the twice-weekly dataset-growth cycle (Section 9) into a screen instead of a command line, and surfaces the uncertainty the API already computes. It realises two recommendations the BCP report carries: *"wire UQ into the UI"* and *"adopt the loop as standing practice."*
 
-**These are purely additive UI options enabled by this extension of work — the existing simulator and settings pages are not disturbed.** Nothing in the current scenario-screening flow, the parameter UI, the governance layer, or the existing endpoints changes. The console is new panels and new routes bolted on beside what is already there; the only change visible to an ordinary user is an *optional* read-only uncertainty display on the KPI cards (§13.3), which can be shipped independently or held back entirely.
+**Purely additive — the existing simulator and settings pages are not disturbed.** Nothing in the scenario-screening flow, the parameter UI, the governance layer, or the existing endpoints changed. The console is new panels and new routes beside what was already there. The loop package is imported optionally: if it fails to load, the UI still serves and the console reports itself unavailable.
 
-### 13.1 What already exists to build on
+### 13.1 Part A — uncertainty on the simulator (all users)
 
-| Capability | Status today |
-|---|---|
-| Per-KPI conformal interval + coverage | **Computed and returned** by `/api/infer` (not drawn by the frontend) |
-| Trust score (UQ width + novelty) | `loop.compute_trust_scores`, `trust.decide()` — done |
-| Candidate proposal + flagging | `loop.propose_and_flag` — done |
-| Worklist Excel generation | `des_backend/manual_worklist.py::export_worklist` — done |
-| Ingest + validate + grow + retrain | `loop.ingest_manual_round` + `results_validation` + `dataset_store` — done, exercised on two real rounds |
-| Recalibration check | `cli_recalibrate_uq_methods` — done |
-| A running web server + frontend | `run_ui_inference_api.py` + `experimenting_ml/UI/` — done |
+On every prediction the KPI cards now show:
 
-The console is a **thin presentation and orchestration layer** over machinery that is already built and tested.
+- the **conformal interval** (`lower – upper`) and its **nominal coverage** (90 / 95 / 99%);
+- a **"verify" chip** on any KPI whose interval half-width exceeds half the predicted value;
+- a **trust strip** above the KPI grid: overall *accept* / *verify against AnyLogic*, the reason, and the **novelty** score versus its calibrated threshold.
 
-### 13.2 Where it lives — a new section under the existing Settings tab
+Backend (`run_ui_inference_api.py`):
 
-The console is a **new, self-contained section added to the existing Settings page** (`experimenting_ml/UI/settings.html`), not a new top-level app and not a change to the current settings content. It sits below the existing parameter/range settings as a collapsible "Operator tools" block. Rationale: it is an administrative surface, not part of the everyday scenario-screening flow, and the settings page already exists as the "everything behind the simulator" area.
+- a `NoveltyScorer` (the same `IsolationForest` the batch loop uses, `loop/novelty.py`) is fitted on the **current** training hull at server start; its 90th-percentile training score is the novelty threshold.
+- `/api/infer` and `/api/predict` return a `reliability` block: `{ decision, reason, novelty:{score,threshold,is_novel}, per_kpi:{…}, low_confidence_kpis:[…] }`.
+- `_build_simulator_payload` carries `interval` and `coverage_level` per KPI.
 
-**Access control (for a future user-management phase).** During the training / dataset-growth phase the console block is **shown only to a backend-operator role**. Ordinary scenario users see the simulator and the optional read-only uncertainty display (§13.3) but not the worklist tools. When user management is added, the gate is a single role check on the console's routes and on whether that Settings block renders — no other part of the UI is touched, and with the role absent the page looks exactly as it does today.
+This is a **lightweight live screen**; the rigorous per-family methodology is PROVEN_6 in the batch loop (§8.4). The two share one trust criterion, as the design intended (`spec.md` §5.1).
 
-### 13.3 Part A — uncertainty visualisation (all users)
+### 13.2 Part B — the operator console (backend-operator surface)
 
-On the main simulator, for each KPI card, render what `/api/infer` already returns:
+A standalone page, `experimenting_ml/UI/operator.html`, linked from the Settings page header (`🛠 Operator console`). For a future user-management phase the gate is a single role check on the link and the `/api/operator/*` routes — with the role absent, the rest of the UI is exactly as it is today.
 
-- the **prediction ± interval** as an error bar or shaded band;
-- a **trust badge** — green *accept ML* / amber *verify in AnyLogic* — from `trust.decide()`;
-- the **novelty flag** when the input vector sits outside the training hull;
-- the nominal vs empirical **coverage** on hover.
+Five panels (`operator-app.js`), each backed by `experimenting_ml/src/loop/operator_api.py`:
 
-This is pure frontend work — the data is already on the wire.
-
-### 13.4 Part B — the operator console (operator role only)
-
-A five-panel section under Settings:
-
-| Panel | Backend | What the operator does |
+| Panel | Backend wrapper | What the operator does |
 |---|---|---|
-| **Pending review** | new `pending_queue.json` + a capture hook in `/api/infer` | See input points that scored low-trust since last time — from live scenario queries and from proposed candidates. Sort by trust score / interval width / novelty. Dismiss, keep, or select for a round. |
-| **Build round** | wraps `loop.export_manual_round` / `manual_worklist.export_worklist` | Select points, set replications and seed, click **Generate worklist**. Downloads `run.xlsx` (the 35 values + 89 constants, ready for AnyLogic). Registers the round in the manifest as `exported_pending_manual_run`. |
-| **Ingest results** | wraps `loop.ingest_manual_round` + `results_validation.validate_results` | **Upload** the AnyLogic results CSV. The panel shows the validation warnings, the dataset growth (e.g. 139 → 169), which KPI columns were ingested vs held back, and the change in trust scores. Confirm to commit. |
-| **Dataset status** | reads `rounds_manifest.json` + `dataset_store` | Current total row count, per-KPI row counts, full round history with timestamps and statuses. |
-| **Recalibration** | wraps `cli_recalibrate_uq_methods` | Run the check; see any `REVIEW NEEDED` flags where a PROVEN_6 method may no longer be best. Read-only — changing a method still goes through mentor sign-off. |
+| **Dataset status** | `operator_api.dataset_status()` — reads `dataset_store` + manifest | See the current row count, per-KPI row counts (uneven — §15.3), and the full round history with statuses. |
+| **Pending review** | `pending_queue` + a capture hook in `/api/infer` | Triage the live scenarios the trust screen flagged as *verify*. Select the ones worth a real run, or dismiss. De-duplicated and capped so the queue stays workable. |
+| **Build round** | `operator_api.export_round()` → `loop.export_manual_round` | Set the KPI scope, candidate count, threshold, batch cap, seed; optionally use the selected pending points instead of the random proposer. Click **Generate worklist** → downloads `run.xlsx` (35 varying values + the 89 constants). Round is recorded in the manifest as `exported_pending_manual_run`. |
+| **Ingest results** | `operator_api.ingest_round()` → `loop.ingest_manual_round` + `results_validation` | Paste or upload the AnyLogic results CSV. Shows the validation warnings (all-identical columns, out-of-range values), the dataset growth, and which KPI columns were ingested. Retrains the round's estimators. |
+| **Recalibration check** | `operator_api.recalibration_report()` → `recalibration_check` | Re-benchmark each PROVEN_6 KPI's family on the current data; flag `REVIEW NEEDED` where the best method now differs from the fixed one. Read-only — never edits `proven6.py`. |
 
-### 13.5 The twice-weekly operator workflow
+### 13.3 Endpoints
+
+```
+GET  /api/operator/status                 row counts + per-KPI + round history
+GET  /api/operator/pending                the pending-review queue
+POST /api/operator/pending/dismiss        { entry_id }
+POST /api/operator/round/export           { kpi_scope, n_candidates, quantile, max_batch_size,
+                                            n_replications, seed, candidate_ids? } → round_id + counts
+GET  /api/operator/worklist?round_id=…    the run.xlsx worklist (file download)
+POST /api/operator/round/ingest           { round_id, results_csv } → growth summary + warnings
+GET  /api/operator/recalibrate            the recalibration-check report
+```
+
+Capture hook: when `/api/infer` returns a `verify` decision for a user-driven scenario (adjusted sliders or a non-baseline level), the input vector is appended to the pending queue — de-duplicated against open entries, capped at 500.
+
+### 13.4 The twice-weekly operator workflow
 
 ```mermaid
 flowchart LR
-    A["Open Settings → Operator console"] --> B["Pending review:<br/>triage low-trust points"]
-    B --> C["Build round:<br/>select points → Generate worklist → download run.xlsx"]
+    A["Settings → Operator console"] --> B["Pending review:<br/>triage low-trust points"]
+    B --> C["Build round:<br/>select / propose → Generate worklist → download run.xlsx"]
     C --> D["AnyLogic Cloud:<br/>enter fields by hand, run replications, export results CSV<br/>(manual — unavoidable)"]
-    D --> E["Ingest results:<br/>upload CSV → review warnings → confirm"]
-    E --> F["Dataset grows · loop estimators retrain (seconds)"]
+    D --> E["Ingest results:<br/>paste/upload CSV → review warnings → confirm"]
+    E --> F["Dataset grows · round estimators retrain (seconds)"]
     F --> G["Occasionally: Recalibration check<br/>+ full-engine retrain when enough rows accrued"]
 ```
 
-Estimated effort: about one to two weeks for a solid first version; a few days for a rough one.
-
-### 13.6 New backend endpoints (all thin wrappers)
-
-```
-GET  /api/operator/pending              → the pending-review queue
-POST /api/operator/pending/{id}/dismiss
-POST /api/operator/round/export         → { point_ids, n_replications, seed } → run.xlsx + round_id
-POST /api/operator/round/{id}/ingest    → multipart results CSV → validation report + growth summary
-GET  /api/operator/dataset/status       → row counts + manifest
-POST /api/operator/recalibrate          → the recalibration-check report
-```
-
-Plus a capture hook: when `/api/infer` computes a trust decision of *refer to AnyLogic*, append the input vector (de-duplicated, capped, with a `reviewed` flag) to the pending queue.
-
-### 13.7 Constraints to design around
+### 13.5 Constraints and notes
 
 - **AnyLogic entry stays manual.** The console removes bookkeeping friction, not the field-by-field data entry into AnyLogic Cloud.
-- **Full-engine retrain is slow** (~20–40 min). The console retrains the loop estimators on every ingest (seconds) and offers full-engine retrain as a separate, less-frequent action.
-- **Queue flooding.** Capturing every low-trust live query needs de-duplication, a cap, and a reviewed/dismissed state — otherwise the queue grows faster than an operator can work it.
-- **Home it in `experimenting_ml` first.** Promotion to `nolhc_ml` production is a later decision, mirroring how SHAP and the loop graduated from the research arm.
+- **Full `nolhc_ml` engine retrain (~20–40 min) is not automatic.** Ingest retrains only the round's loop estimators (seconds); trigger a full engine retrain deliberately when enough rows have accrued.
+- **Candidate proposer is still the v0 uniform-random placeholder** (§15.2). The "use selected pending points" option is the path to a more targeted batch until diversity-aware selection is built.
+- **State** lives in `experimenting_ml/data/operator/pending_queue.json` (git-ignored runtime state) and the existing `data/manual_rounds/`.
+- **Tests:** `experimenting_ml/tests/test_operator_console.py` (7); total suite 163.
 
 ---
 
@@ -717,7 +705,7 @@ Plus a capture hook: when `/api/infer` computes a trust decision of *refer to An
 
 ```bash
 cd nolhc_ml         && ./.venv/bin/python -m pytest -q     #   9 passed
-cd experimenting_ml && ./.venv/bin/python -m pytest -q     # 156 passed
+cd experimenting_ml && ./.venv/bin/python -m pytest -q     # 163 passed
 cd brexit_ml        && ./.venv/bin/python -m pytest -q     #  52 passed, 1 skipped
 ```
 
@@ -741,6 +729,7 @@ Notable coverage:
 | Results validation (against the 5-Sep incident) | `test_results_validation.py` |
 | Recalibration check (reproduces the workbook's `wt_ob_lb` numbers) | `test_recalibration_check.py` |
 | Manual-round CLIs end to end | `test_cli_manual_round.py` |
+| Operator console: pending queue + `operator_api` wrappers | `test_operator_console.py` |
 
 ---
 
@@ -761,7 +750,7 @@ Full analysis, evaluation tables and the business case are in the BCP report. Th
 | Loop — real AnyLogic Cloud rounds ingested | 2 (10 + 30 rows) |
 | Loop — training set growth on the record | **129 → 169 rows** |
 | Cost baseline being displaced | €2,520 / year AnyLogic Cloud API subscription |
-| Test suites | `nolhc_ml` 9 · `experimenting_ml` 156 · `brexit_ml` 52 (+1 skipped) |
+| Test suites | `nolhc_ml` 9 · `experimenting_ml` 163 · `brexit_ml` 52 (+1 skipped) |
 
 The two real rounds are the concrete demonstration that the "129 is a small dataset" concern is answerable: the dataset now grows through a repeatable, on-the-record process driven by the engine's own trust score.
 
@@ -789,7 +778,7 @@ The two real rounds surfaced a class of question that will recur whenever the KP
 
 ### 15.4 Engineering items
 
-- Conformal intervals and novelty flags are computed and returned by the API but **not yet drawn by either UI** — Section 13 is the design that closes this.
+- The uncertainty display and the operator console (Section 13) are delivered in `experimenting_ml`; promotion into the `nolhc_ml` production UI is a later decision.
 - The environment is pinned by lock file but not yet containerised.
 
 ---
@@ -798,8 +787,8 @@ The two real rounds surfaced a class of question that will recur whenever the KP
 
 Priority order, for the client and any inheriting engineer:
 
-1. **Surface UQ + novelty in the UI** (Section 13, Part A) — low effort, high value; the data is already returned by `/api/infer`. Purely additive; the existing UI is untouched.
-2. **Build the operator console** (Section 13, Part B) — makes the dataset-growth loop a sustainable twice-weekly operation instead of a command-line task.
+1. **Adopt the operator console (Section 13) as the standing twice-weekly practice** — dataset status, pending review, build round, ingest, recalibration check are all now a screen; each real round grows the evidence base on the record.
+2. **Promote the uncertainty display and console into the `nolhc_ml` production UI** once the workflow has bedded in — currently delivered in `experimenting_ml`.
 3. **Adopt the batch-sequential loop as standing practice** — each real round grows the evidence base on the record and directly answers the "129 is a small dataset" concern.
 4. **Run `cli_recalibrate_uq_methods` after every round** and act on large coverage moves — re-fit the affected KPI's interval, and revisit its UQ method with the simulation owner if the move persists. The `uti_dafm_r` 92.3% → 64.3% drop (§15.3) is the worked example: treat it as a recalibration trigger, not a one-off.
 5. **Confirm the KPI ↔ AnyLogic mappings and the constant set** with the simulation owner before the next design wave, and give both a documented owner (§15.3).
