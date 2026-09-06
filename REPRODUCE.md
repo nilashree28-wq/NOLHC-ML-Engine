@@ -38,11 +38,22 @@ cross-package dependency is intentional and resolved by path in code.
   **use the lock file for reproduction.**
 
 ```bash
-# one package at a time
+# one package at a time — macOS / Linux
 cd nolhc_ml           # then experimenting_ml, then (optionally) brexit_ml
 python3.8 -m venv .venv
 ./.venv/bin/pip install -r requirements.lock.txt
 ```
+
+```powershell
+# Windows PowerShell — same, with .venv\Scripts\ instead of ./.venv/bin/
+cd nolhc_ml
+py -3.8 -m venv .venv
+.venv\Scripts\pip install -r requirements.lock.txt
+```
+
+Throughout this file the commands are written for macOS / Linux; on Windows replace
+`./.venv/bin/` with `.venv\Scripts\`, `python3.8 -m venv` with `py -3.8 -m venv`, and
+`&&` chains with separate lines. Full substitution table: technical report §5.2.1.
 
 ---
 

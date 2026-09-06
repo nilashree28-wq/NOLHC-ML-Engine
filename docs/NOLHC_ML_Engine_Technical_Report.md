@@ -281,13 +281,41 @@ If you are looking at an older clone or archive and see these, ignore them.
 
 ### 5.2 Setup, per code base
 
+Each code base gets its own virtual environment built from its own lock file.
+
+**macOS / Linux (bash / zsh):**
+
 ```bash
 cd nolhc_ml               # then experimenting_ml, then (optionally) brexit_ml
 python3.8 -m venv .venv
 ./.venv/bin/pip install -r requirements.lock.txt
 ```
 
+**Windows (PowerShell):**
+
+```powershell
+cd nolhc_ml               # then experimenting_ml, then (optionally) brexit_ml
+py -3.8 -m venv .venv     # or: python -m venv .venv   (if 3.8 is the only Python)
+.venv\Scripts\pip install -r requirements.lock.txt
+```
+
 `requirements.txt` holds human-readable version ranges; **`requirements.lock.txt` holds the exact pins captured on 5 September 2026 and is what you should install for reproduction.**
+
+### 5.2.1 Command convention used in this document
+
+The command blocks that follow are written for **macOS / Linux**. To run them on **Windows PowerShell**, apply these substitutions (a virtual environment must be activated or the interpreter called by full path either way):
+
+| macOS / Linux | Windows PowerShell |
+|---|---|
+| `python3.8 -m venv .venv` | `py -3.8 -m venv .venv` |
+| `./.venv/bin/python …` | `.venv\Scripts\python …` |
+| `./.venv/bin/pip …` | `.venv\Scripts\pip …` |
+| `./.venv/bin/python -m pytest -q` | `.venv\Scripts\python -m pytest -q` |
+| `cmd_a && cmd_b` (chain) | run on two lines, or `cmd_a; if ($?) { cmd_b }` |
+| `~/Downloads/file.csv` | `$env:USERPROFILE\Downloads\file.csv` |
+| `for pkg in a b c; do … done` | `foreach ($pkg in 'a','b','c') { … }` |
+
+Alternatively, **activate** the environment once per shell (`.venv\Scripts\Activate.ps1` on Windows, `source .venv/bin/activate` on macOS/Linux) and then just call `python` / `pip` / `pytest` directly. If PowerShell blocks the activation script, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once. On Apple Silicon, `brew install libomp` if XGBoost fails to import.
 
 ### 5.3 Key libraries and where they are used
 
@@ -387,6 +415,14 @@ cd nolhc_ml
 ./.venv/bin/python src/evaluate_to_excel.py
 ```
 
+```powershell
+# Windows PowerShell — replace ./.venv/bin/ with .venv\Scripts\
+cd nolhc_ml
+.venv\Scripts\python src\train.py
+.venv\Scripts\python src\evaluate.py
+.venv\Scripts\python src\evaluate_to_excel.py
+```
+
 `train.py` is deterministic (seed 42). Verified on 5 September 2026 against the committed lock file: a full re-run reproduced **all 20/20 per-KPI winners**, the mean R² (0.7357) and the stacking-won count (8) exactly — gradient-boosting models included. Off the pinned versions, expect boosting metrics to drift within library-version tolerance.
 
 ---
@@ -481,6 +517,17 @@ python -m loop.cli_ingest_manual_round \
 #    had to extended_{X,Y}_train.parquet, flips the manifest entry to "ingested".
 ```
 
+On **Windows PowerShell**, put each command on one line (drop the `\` continuations) and use a Windows path for the results file:
+
+```powershell
+cd experimenting_ml\src
+.venv\Scripts\python -m loop.cli_export_manual_round --kpi-scope demo4 --n-candidates 20 --quantile 0.9 --max-batch-size 10 --n-replications 5 --seed 42
+# ... manual AnyLogic step ...
+.venv\Scripts\python -m loop.cli_ingest_manual_round --round-id round_20260906_101500 --results $env:USERPROFILE\Downloads\anylogic_results.csv
+```
+
+(The `.venv` here is `experimenting_ml/.venv`; call it by the path shown or activate it first.)
+
 Use `--kpi-scope proven6` to run against the PROVEN_6 benchmarked methods instead of the generic dispatch. Repeating steps 1–3 automatically works against the grown dataset.
 
 ### 9.2 The manual AnyLogic step — you build the worksheet
@@ -511,6 +558,8 @@ For a fresh case study, or to cross-check the generated sheet, use the reference
 
 ### 10.1 Clean clone → running system
 
+**macOS / Linux:**
+
 ```bash
 git clone https://github.com/nilashree28-wq/NOLHC-ML-Engine.git
 cd NOLHC-ML-Engine
@@ -520,12 +569,36 @@ for pkg in nolhc_ml experimenting_ml brexit_ml; do
 done
 ```
 
+**Windows (PowerShell):**
+
+```powershell
+git clone https://github.com/nilashree28-wq/NOLHC-ML-Engine.git
+cd NOLHC-ML-Engine
+
+foreach ($pkg in 'nolhc_ml','experimenting_ml','brexit_ml') {
+  Push-Location $pkg
+  py -3.8 -m venv .venv
+  .venv\Scripts\pip install -r requirements.lock.txt
+  Pop-Location
+}
+```
+
 ### 10.2 Prove the clone is sound — run the tests
+
+**macOS / Linux:**
 
 ```bash
 cd nolhc_ml         && ./.venv/bin/python -m pytest -q     #   9 passed
 cd experimenting_ml && ./.venv/bin/python -m pytest -q     # 163 passed
 cd brexit_ml        && ./.venv/bin/python -m pytest -q     #  52 passed, 1 skipped
+```
+
+**Windows (PowerShell):**
+
+```powershell
+cd nolhc_ml         ; .venv\Scripts\python -m pytest -q    #   9 passed
+cd ..\experimenting_ml ; .venv\Scripts\python -m pytest -q # 163 passed
+cd ..\brexit_ml     ; .venv\Scripts\python -m pytest -q    #  52 passed, 1 skipped
 ```
 
 Last verified 6 September 2026, Python 3.8.10, committed lock files.
@@ -562,8 +635,16 @@ Last verified 6 September 2026, Python 3.8.10, committed lock files.
 ### 11.1 `nolhc_ml` — parameter UI
 
 ```bash
+# macOS / Linux
 cd nolhc_ml
 ./.venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 8000
+#  open http://127.0.0.1:8000/
+```
+
+```powershell
+# Windows PowerShell
+cd nolhc_ml
+.venv\Scripts\python -m uvicorn main:app --host 0.0.0.0 --port 8000
 #  open http://127.0.0.1:8000/
 ```
 
@@ -574,11 +655,18 @@ The UI lets you set the 35 inputs (directly or from a baseline scenario), calls 
 ### 11.2 `experimenting_ml` — scenario Decision-Intelligence UI
 
 ```bash
+# macOS / Linux
 cd experimenting_ml
 ./.venv/bin/python run_ui_inference_api.py --port 8000
 #  simulator        http://localhost:8000/UI/index.html
 #  settings page    http://localhost:8000/UI/settings.html
 #  operator console http://localhost:8000/UI/operator.html
+```
+
+```powershell
+# Windows PowerShell
+cd experimenting_ml
+.venv\Scripts\python run_ui_inference_api.py --port 8000
 ```
 
 Endpoints: `POST /api/infer`, `POST /api/predict`, `GET /api/health`, `GET /api/meta`, and `GET|POST /api/operator/*` (Section 13.3).
@@ -807,6 +895,8 @@ Priority order, for the client and any inheriting engineer:
 
 ### Appendix A — Command cheat-sheet
 
+**macOS / Linux:**
+
 ```bash
 # ---- setup (per package) ----
 python3.8 -m venv .venv && ./.venv/bin/pip install -r requirements.lock.txt
@@ -842,6 +932,44 @@ python -m loop.cli_export_manual_round --kpi-scope demo4 --n-candidates 20 --qua
 python -m loop.cli_ingest_manual_round --round-id <round_id> --results <results.csv>
 python -m loop.cli_recalibrate_uq_methods
 ```
+
+**Windows (PowerShell):**
+
+```powershell
+# ---- setup (per package) ----
+py -3.8 -m venv .venv ; .venv\Scripts\pip install -r requirements.lock.txt
+
+# ---- tests ----
+cd nolhc_ml            ; .venv\Scripts\python -m pytest -q
+cd ..\experimenting_ml ; .venv\Scripts\python -m pytest -q
+cd ..\brexit_ml        ; .venv\Scripts\python -m pytest -q
+
+# ---- engine ----
+cd nolhc_ml
+.venv\Scripts\python src\train.py
+.venv\Scripts\python src\evaluate.py ; .venv\Scripts\python src\evaluate_to_excel.py
+.venv\Scripts\python -m uvicorn main:app --port 8000       # parameter UI @ http://127.0.0.1:8000/
+
+# ---- benchmarking pipeline (experimenting_ml, activate .venv first: .venv\Scripts\Activate.ps1) ----
+python run_step1_cv.py
+python run_mentor_step2.py
+python run_step3_pre_conformal.py
+python run_step4_shap.py ; python run_step4_shap_master_excel.py
+python run_step6_retrain.py
+python run_test_set_evaluation_final.py
+python run_step10_report.py
+
+# ---- scenario UI ----
+cd experimenting_ml ; .venv\Scripts\python run_ui_inference_api.py --port 8000
+#   simulator @ http://localhost:8000/UI/index.html   ·   operator console @ .../UI/operator.html
+
+# ---- dataset-growth loop (experimenting_ml\src) ----
+.venv\Scripts\python -m loop.cli_export_manual_round --kpi-scope demo4 --n-candidates 20 --quantile 0.9 --max-batch-size 10 --n-replications 5 --seed 42
+.venv\Scripts\python -m loop.cli_ingest_manual_round --round-id <round_id> --results <results.csv>
+.venv\Scripts\python -m loop.cli_recalibrate_uq_methods
+```
+
+> PowerShell note: `;` runs the next command unconditionally (unlike bash `&&`). To stop on failure, split onto separate lines or wrap as `cmd_a; if ($?) { cmd_b }`. If a `.ps1` activation script is blocked, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once.
 
 ### Appendix B — Inputs and KPIs
 
