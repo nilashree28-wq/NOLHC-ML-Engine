@@ -36,5 +36,20 @@ Result workbooks from the uncertainty-quantification (UQ) work
   (seed 42, 103/26) using the `loop/uq/` estimators — a documented follow-up,
   not a one-command reproduction.
 
-See `docs/spec.md` §5.1 and §7 item 13 for the full method rationale, and
-§7 item 14 for the mentor's 1-Sep feedback and how each point was addressed.
+See `docs/spec.md` §5.1 and §7 item 13 for the full method rationale, §7 item
+14 for the mentor's 1-Sep feedback and how each point was addressed, and §7
+item 18 for the recalibration-check mechanism below.
+
+## Checking whether the method choice still holds as the dataset grows
+
+`loop.recalibration_check` / `python -m loop.cli_recalibrate_uq_methods`
+(from `experimenting_ml/src`) re-runs each `PROVEN_6` KPI's family
+comparison against whatever `dataset_store.load_current_training_data()`
+currently holds, and reports whether the fixed method is still the closest
+to the 90% coverage target. It does **not** rebuild `UQ_Method_Benchmark.xlsx`
+itself (the original 3-methods comparison per family, including the
+hand-rolled bootstrap-ensemble candidate, stays result-only as above) — it's
+a lighter, committed, tested check for "has anything changed enough to be
+worth another mentor look," not a replacement for the original workbook.
+Validated to reproduce the workbook's own `wt_ob_lb` numbers exactly
+(spec.md §7 item 18) before being trusted for anything.
