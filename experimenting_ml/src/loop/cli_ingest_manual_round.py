@@ -27,6 +27,7 @@ from . import dataset_store
 from .des_backend.manual_worklist import ManualWorklistDESBackend
 from .loop import ingest_manual_round
 from .proven6 import get_proven_uq_estimator
+from .results_validation import validate_results
 from .uq.dispatch import load_registry
 
 
@@ -58,6 +59,19 @@ def main(argv: Optional[List[str]] = None) -> None:
     flagged_batch = manual_backend.import_run_requests_csv(run_requests_path)
 
     X_train, Y_train = dataset_store.load_current_training_data()
+
+    # T2.13 (spec.md §7 item 15): sanity-check the real results BEFORE they're
+    # trusted -- built in direct response to the 5-Sep incident (4 KPIs
+    # silently reading 0.000 across a whole real batch). Warns, does not
+    # block -- a genuinely rare real value should still be ingested.
+    parsed_results = manual_backend.ingest_results(args.results)
+    warnings = validate_results(parsed_results, Y_train, registry)
+    if warnings:
+        print(f"CAUTION -- {len(warnings)} sanity-check warning(s) on this round's results (not blocking ingestion):")
+        for w in warnings:
+            print(f"  - {w}")
+        print()
+
     result = ingest_manual_round(
         kpi_slugs, args.results, manual_backend, flagged_batch, X_train, Y_train, registry,
         estimator_factory=estimator_factory,

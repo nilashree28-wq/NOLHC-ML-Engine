@@ -69,7 +69,17 @@ def fit_kpi_estimators(
     """kpi_slug -> a fitted UQEstimator. Defaults to T2.1's generic,
     registry-driven dispatch (bagged-tree/GPR/conformal by registry.json,
     never hardcoded) -- pass estimator_factory=proven6.get_proven_uq_estimator
-    to use PROVEN_6's benchmarked methods instead (spec.md §7 item 13)."""
+    to use PROVEN_6's benchmarked methods instead (spec.md §7 item 13).
+
+    Rows with a NaN value for a given KPI are dropped before fitting THAT
+    KPI's estimator (checked per-KPI, not once for the whole batch) --
+    real case, not hypothetical: T2.10's design deliberately persists every
+    KPI a manual round's results file has, leaving the rest as NaN rather
+    than discarding rows (spec.md §7 item 12). That means a later round
+    ingesting fewer KPIs than a KPI's own dispatch needs will otherwise put
+    NaN into that KPI's training target -- caught in production, 5-Sep,
+    when a DEMO_4 retrain crashed on exactly this (CatBoost refusing a NaN
+    target) for a round whose real results only covered 14 of 20 KPIs."""
     reg = registry if registry is not None else load_registry()
     outputs = reg.get("outputs", {})
     factory = estimator_factory or get_uq_estimator
@@ -83,8 +93,16 @@ def fit_kpi_estimators(
         if raw_key not in Y_train.columns:
             raise KeyError(f"{raw_key!r} (for {slug!r}) not in Y_train columns")
         y = Y_train[raw_key].to_numpy(dtype=float)
+        mask = ~np.isnan(y)
+        if not mask.all():
+            dropped = int((~mask).sum())
+            X_fit, y_fit = X[mask], y[mask]
+        else:
+            dropped = 0
+            X_fit, y_fit = X, y
         est = factory(slug, reg)
-        est.fit(X, y)
+        est.fit(X_fit, y_fit)
+        est._n_rows_dropped_for_nan_target = dropped  # surfaced for callers that want to warn on this
         estimators[slug] = est
     return estimators
 

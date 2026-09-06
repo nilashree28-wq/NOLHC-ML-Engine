@@ -71,6 +71,33 @@ class FitAndScoreTests(unittest.TestCase):
             result = est.predict_with_uncertainty(self.X_df.iloc[:3].to_numpy(dtype=float))
             self.assertEqual(result.mean.shape, (3,))
 
+    def test_fit_kpi_estimators_drops_rows_with_nan_target_per_kpi(self):
+        """Real bug (5-Sep): a manual round's real results file covered
+        only some KPIs; the others got NaN for those new rows (T2.10's
+        deliberate "persist every KPI present, don't discard rows" design,
+        spec.md section 7 item 12). Retraining a KPI whose new rows are NaN
+        used to crash (CatBoost refuses a NaN target) -- now those rows are
+        dropped for THAT KPI's fit only, other KPIs unaffected."""
+        X = self.X_df.copy()
+        Y = self.Y_df.copy()
+        extra_x = X.iloc[[0]].copy()
+        extra_x.index = ["new_row"]
+        X_ext = pd.concat([X, extra_x])
+        extra_y = {col: [np.nan] for col in Y.columns}
+        raw_key = self.registry["outputs"]["wt_ob_a_gb_ross"]["raw_key"]
+        extra_y[raw_key] = [123.0]  # only one DEMO_4 KPI has a real value for this new row
+        Y_ext = pd.concat([Y, pd.DataFrame(extra_y, index=["new_row"])])
+
+        estimators = fit_kpi_estimators(DEMO_4, X_ext, Y_ext, self.registry)
+        self.assertEqual(set(estimators), set(DEMO_4))
+        for slug, est in estimators.items():
+            result = est.predict_with_uncertainty(self.X_df.iloc[:2].to_numpy(dtype=float))
+            self.assertEqual(result.mean.shape, (2,))
+        # the 3 KPIs without a real value for "new_row" dropped exactly 1 row; the one with a value dropped 0
+        for slug, est in estimators.items():
+            expected_dropped = 0 if slug == "wt_ob_a_gb_ross" else 1
+            self.assertEqual(est._n_rows_dropped_for_nan_target, expected_dropped, msg=slug)
+
     def test_compute_trust_scores_nonnegative_for_every_kpi(self):
         estimators = fit_kpi_estimators(DEMO_4, self.X_df, self.Y_df, self.registry)
         novelty = NoveltyScorer().fit(self.X_df.to_numpy(dtype=float))
