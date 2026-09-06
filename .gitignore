@@ -48,3 +48,6 @@ brexit_ml/models/
 submission_package/
 submission_package*/
 Submission_Package*/
+
+# Operator console runtime state (pending-review queue)
+experimenting_ml/data/operator/
