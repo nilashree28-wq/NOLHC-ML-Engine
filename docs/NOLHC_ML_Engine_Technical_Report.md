@@ -240,6 +240,7 @@ experimenting_ml/
 │       ├── uq/                 # dispatch.py + tree_native, gpr_native, conformal_fallback, mapie_cv_plus
 │       └── des_backend/        # synthetic.py, ground_truth_gp.py, demo4_ground_truth.py,
 │                               #   manual_worklist.py (+ ground_truth_gps.joblib)
+│                               #   [planned] cloud_api.py — automated AnyLogic Cloud driver (§9.4)
 ├── data/manual_rounds/        # round_<ts>/ (run.csv, run.xlsx, results.csv) +
 │                              #   extended_X/Y_train.parquet + rounds_manifest.json
 ├── docs/
@@ -463,6 +464,7 @@ The generic dispatcher (`uq/dispatch.py`) takes a list of KPI slugs and routes e
 |---|---|---|
 | `SyntheticDESBackend` | Fast, offline. A Gaussian-process (for GP-won KPIs) or the trained production model (for the rest) stands in as ground truth, with injected replication noise. For iterating on loop mechanics. | `des_backend/synthetic.py`, `ground_truth_gp.py`, `demo4_ground_truth.py` |
 | `ManualWorklistDESBackend` | The real path. Generates a human-followable worklist (35 varying values + 89 constants per candidate) and ingests the AnyLogic results file back. | `des_backend/manual_worklist.py` |
+| *(planned)* `CloudApiDESBackend` | **Under development (§9.4).** Same interface as the manual backend, but drives AnyLogic Cloud directly with stored credentials and returns the completed results workbook — removing the by-hand data entry. Not yet in the repository. | *(planned)* `des_backend/cloud_api.py` |
 
 The replication **count** for the original 129 runs is confirmed (5 per point); the replication **noise magnitude** is a documented placeholder (`0.15 × CV-RMSE`), because the per-replication values behind the 129 means were not retained.
 
@@ -551,6 +553,20 @@ For a fresh case study, or to cross-check the generated sheet, use the reference
 - **Appends** every KPI column present — not just the round's focus KPIs — to `extended_{X,Y}_train.parquet`. Rows with a missing value for a given KPI are dropped **per KPI** when that KPI's estimator is retrained, so one KPI's gap does not block the others.
 - **Retrains** the round's estimators and **updates** `rounds_manifest.json` (status → `ingested`, row count, timestamps).
 - The full `nolhc_ml` engine is **not** retrained automatically (that is a ~20–40-minute job) — do it deliberately when enough rows have accumulated.
+
+### 9.4 Planned — automated AnyLogic Cloud execution (under development)
+
+> **Status: under development, not yet in the repository.** This subsection is a forward-looking placeholder so the folder structure and the runbook can absorb the component when it lands. Nothing here is delivered code.
+
+The one genuinely manual link in the loop is §9.2 — a person typing each run's fields into AnyLogic Cloud and downloading the results. A driver that removes that step is being built by **Sakshi Dhamane**:
+
+- **What it will do.** Take the `run.xlsx` / `run.csv` worklist that `cli_export_manual_round` already produces, sign in to AnyLogic Cloud with stored credentials, submit each run request with its replication count and seed, wait for completion, and return a **single completed results workbook** in exactly the shape §9.2 specifies (`run_id, replication, seed, <one column per KPI>`) — ready to hand straight to `cli_ingest_manual_round` / the operator console's *Ingest results* panel.
+- **Where it will slot in.** As a **third DES backend** alongside `SyntheticDESBackend` and `ManualWorklistDESBackend` (§8.5) — provisionally `experimenting_ml/src/loop/des_backend/cloud_api.py`, exposing the same `export` / `ingest` interface so `loop.py`, the CLIs and the operator console call it without change. The manual backend stays as the fallback for when the Cloud API is unavailable.
+- **What changes in the workflow.** Steps 1 and 3 of §9.1 are unchanged; step 2 (the manual entry) becomes a single command / a button in the operator console instead of a worksheet session. The trust-scoring, validation (`results_validation.py`) and append-only dataset growth all stay exactly as they are — the automation only replaces data entry, not any modelling decision.
+- **Credential handling (requirement for integration).** Login credentials must come from an environment variable or an untracked local secrets file — **never committed**, never written to the round directory or the manifest. `docs/.gitignore` / `.gitignore` will be extended to cover the secrets file before the component is merged.
+- **On delivery.** The code will be added under `experimenting_ml/src/loop/des_backend/`, with its own tests in `experimenting_ml/tests/`, an entry in `experimenting_ml/docs/spec.md` §8, and this subsection rewritten from "planned" to "delivered" with the actual command and configuration steps.
+
+Until then, the manual procedure in §9.2 is the supported path and the operator console (§13) is the way to run it with the least friction.
 
 ---
 
@@ -784,7 +800,7 @@ flowchart LR
 
 ### 13.5 Constraints and notes
 
-- **AnyLogic entry stays manual.** The console removes bookkeeping friction, not the field-by-field data entry into AnyLogic Cloud.
+- **AnyLogic entry is manual today.** The console removes bookkeeping friction, not the field-by-field data entry into AnyLogic Cloud. An automated Cloud driver that closes that last gap is under development (§9.4); when it lands, the *Build round* → *Ingest results* panels become a single automated step.
 - **Full `nolhc_ml` engine retrain (~20–40 min) is not automatic.** Ingest retrains only the round's loop estimators (seconds); trigger a full engine retrain deliberately when enough rows have accrued.
 - **Candidate proposer is still the v0 uniform-random placeholder** (§15.2). The "use selected pending points" option is the path to a more targeted batch until diversity-aware selection is built.
 - **State** lives in `experimenting_ml/data/operator/pending_queue.json` (git-ignored runtime state) and the existing `data/manual_rounds/`.
@@ -871,6 +887,7 @@ The two real rounds surfaced a class of question that will recur whenever the KP
 
 - The uncertainty display and the operator console (Section 13) are delivered in `experimenting_ml`; promotion into the `nolhc_ml` production UI is a later decision.
 - The environment is pinned by lock file but not yet containerised.
+- Automated AnyLogic Cloud execution (§9.4) is **under development** by Sakshi Dhamane — it will replace the manual data-entry step with a credential-driven Cloud driver returning the completed results workbook. To be added under `experimenting_ml/src/loop/des_backend/` on delivery.
 
 ---
 
@@ -886,8 +903,9 @@ Priority order, for the client and any inheriting engineer:
 6. **Lock the per-family UQ methods** from PROVEN_6 into production; `tt_ob_lb` currently flags for review on the grown data.
 7. **Add input-range governance** so the UI cannot silently extrapolate outside the training hull.
 8. **Replace the v0 candidate proposer** with diversity- / uncertainty-directed batch selection.
-9. **Freeze the environment** with a container image built from the three lock files.
-10. **Consolidate to one authoritative UI**, and roadmap the DEMO_4 / PROVEN_6 depth of evidence out to all 20 KPIs.
+9. **Integrate the automated AnyLogic Cloud driver (§9.4)** once delivered — as a third DES backend behind the existing interface, with credentials supplied only through an untracked secrets file, so the loop can run round-to-round without manual data entry.
+10. **Freeze the environment** with a container image built from the three lock files.
+11. **Consolidate to one authoritative UI**, and roadmap the DEMO_4 / PROVEN_6 depth of evidence out to all 20 KPIs.
 
 ---
 
