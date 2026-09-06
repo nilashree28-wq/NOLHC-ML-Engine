@@ -259,7 +259,7 @@ experimenting_ml/
 
 ### 4.4 `docs/`
 
-Specs, `figures/`, the `paper/icml2026/` scaffold, `NOLHC_ML_Engine_Due_Diligence_Report.md`, and this report. Signed / personal / third-party-copyright material and the BCP academic-process working folder are **kept local and are not in the repository** (see `docs/.gitignore`).
+Engineering specs (`ml/spec/`, `ui/`, `api/`), `figures/`, the input/output crosswalk CSVs, `NOLHC_ML_Engine_Due_Diligence_Report.md`, and this report. Signed / personal / third-party-copyright material, the BCP academic-process working folder, and the student-submission material (presentations, the research-paper drafts, group coursework reports) are **kept local and are not in the repository** (see `docs/.gitignore`).
 
 ### 4.5 What is *not* here (and why)
 
