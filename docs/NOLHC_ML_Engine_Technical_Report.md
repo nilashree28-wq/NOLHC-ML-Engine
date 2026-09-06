@@ -5,7 +5,7 @@
 **Prepared for:** Dr Amr Mahfouz
 **Repository:** <https://github.com/nilashree28-wq/NOLHC-ML-Engine>
 **Covers:** February 2026 – September 2026, the complete delivery (`nolhc_ml`, `experimenting_ml`, and the superseded `brexit_ml`)
-**Status:** v1 draft — 6 September 2026
+**Status:** v1.0 — 6 September 2026
 
 ---
 
@@ -57,7 +57,7 @@ It is deliberately **reproducibility-first**: each step tells you *what to run* 
 
 - New to the project? Read Sections 2–4, then follow Section 10 on a clean clone.
 - Need to demo it? Section 11.
-- Running the twice-weekly dataset-growth cycle? Section 9, then Section 13 for the proposed UI that will replace the command line.
+- Running the twice-weekly dataset-growth cycle? Section 9, then Section 13 for the operator console that replaces the command line.
 - Planning a new case study with extra parameters or KPIs? Section 12.
 
 ---
@@ -574,11 +574,12 @@ The UI lets you set the 35 inputs (directly or from a baseline scenario), calls 
 ```bash
 cd experimenting_ml
 ./.venv/bin/python run_ui_inference_api.py --port 8000
-#  open http://localhost:8000/UI/index.html
-#  settings page: http://localhost:8000/UI/settings.html
+#  simulator        http://localhost:8000/UI/index.html
+#  settings page    http://localhost:8000/UI/settings.html
+#  operator console http://localhost:8000/UI/operator.html
 ```
 
-Endpoints: `POST /api/infer`, `POST /api/predict`, `GET /api/health`, `GET /api/meta`.
+Endpoints: `POST /api/infer`, `POST /api/predict`, `GET /api/health`, `GET /api/meta`, and `GET|POST /api/operator/*` (Section 13.3).
 
 `/api/infer` and `/api/predict` return, per KPI: the prediction, its SHAP drivers, the **conformal interval `{lower, upper, width}`**, `coverage_level`, `empirical_coverage`, and (since September) a `reliability` block with the novelty score and the overall accept/verify decision. The simulator draws these; the operator console (Section 13) uses the same data.
 
@@ -898,4 +899,4 @@ The machine-learning and simulation platform was developed collaboratively with 
 
 ---
 
-*End of v1 draft — 6 September 2026. Please review and note any discrepancies.*
+*End of v1.0 — 6 September 2026.*
