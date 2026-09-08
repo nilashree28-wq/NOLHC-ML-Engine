@@ -543,6 +543,8 @@ Two corrections landed on 6 September (spec.md §7 items 20 and 23) and are bake
 - **Integer fields.** 27 of the 35 factors are Integer-typed in AnyLogic Cloud; the worksheet now rounds them to whole numbers. Only the 8 percentage / fraction factors carry a decimal. Older worksheets wrote raw floats, which AnyLogic's entry form rejects.
 - **Four factors were mis-labelled "no AnyLogic field".** `NA_Im_LB`, `NA_Ex_LB`, `A_Im_LB`, `A_Ex_LB` in fact map to the Rotterdam-direct volume fields `VolAllPImViaRott` / `VolAllPExViaRott` / `VolAgriImViaRott` / `VolAgriExViaRott` — confirmed against the live dashboard. Only **3 factors** genuinely have no AnyLogic field now: `Pct_NA_OB_Green`, `Pct_NA_OB_Red`, `Pct_A_OB_Red`. Rounds entered by hand before this date skipped those four — see Section 15.3.
 
+**Important:** the 3 no-field factors are *not entered* into AnyLogic, but the worklist and the stored training row still carry the proposer's value for them. That mismatch is a known defect in the grown dataset — see Section 15.2 and Section 16, item 0.
+
 For a fresh case study, or to cross-check the generated sheet, use the reference workbooks in **`experimenting_ml/docs/anylogic/`**:
 
 | Workbook | What it gives you |
@@ -560,6 +562,7 @@ For a fresh case study, or to cross-check the generated sheet, use the reference
 - **Appends** every KPI column present — not just the round's focus KPIs — to `extended_{X,Y}_train.parquet`. Rows with a missing value for a given KPI are dropped **per KPI** when that KPI's estimator is retrained, so one KPI's gap does not block the others.
 - **Retrains** the round's estimators and **updates** `rounds_manifest.json` (status → `ingested`, row count, timestamps).
 - The full `nolhc_ml` engine is **not** retrained automatically (that is a ~20–40-minute job) — do it deliberately when enough rows have accumulated.
+- **Known issue — records the *proposed* X, not the *applied* X.** `dataset_store.append_round` stores the candidate's full 35-factor vector, including factors that were never entered into AnyLogic (the 3 with no field; anything skipped at manual entry). Those columns in `extended_X_train.parquet` do not reflect what the simulation actually ran — see Section 15.2 and the remediation in Section 16.
 
 ### 9.4 Browser-automation for AnyLogic Cloud (prototype — not yet in the repository)
 
@@ -883,6 +886,7 @@ The three rounds are the concrete demonstration that the "129 is a small dataset
 
 - **Small sample.** 179 rows after three rounds. Predictions are most reliable near dense regions of the training hull; the UI keeps inputs within training-feasible bounds for this reason.
 - **The September rows may be meta-model output, not DES output — open question for the mentor.** The AnyLogic Cloud *dashboard* route used for the September rounds (and possibly the earlier UI-export route) runs `PostBrexit_Model_ML Meta Model`, a trained surrogate of the simulation, at a fixed seed with a single replication — not the full discrete-event model (spec.md §7 item 22). Nothing already ingested has been reverted, but whether meta-model-sourced points are appropriate training data for this project's *own* surrogate needs a decision before the report leans on the grown-dataset numbers.
+- **Grown rows record input values that were never applied to the simulation — a defect in the delivered dataset, raised by the mentor.** `extended_X_train.parquet` has **no nulls**: the candidate proposer samples all 35 factors and `dataset_store` stores all 35, but only the factors actually entered into AnyLogic were applied. So every one of the 50 grown rows carries proposer-generated values for the **3 factors with no AnyLogic field** (`Pct_NA_OB_Green` 0.60–0.90, `Pct_NA_OB_Red` 0.11–0.40, `Pct_A_OB_Red` 0.10–0.39), and round 1's 10 rows (`round_20260827_161725`) additionally carry values for the **4 ViaRott factors**, which were skipped at manual entry. For those columns the recorded X is fiction — AnyLogic produced Y with the factor at its AS-IS / default value — so any dependence the surrogate learns on them from the grown rows is spurious. Round 1 has **7 of 35** inputs recorded-but-not-applied; every grown row has at least 3. The original 129 design rows are unaffected. Remediation in Section 16.
 - **Weak KPIs, disclosed.** `TT_IB_DR` (negative R²), `WT_IB_NA_Ross` (very low R²), `TT_OB_DR` (fragile). `TT_IB_DR` is kept in DEMO_4 deliberately, as a low-trust stress test — the trust score correctly reads it as unreliable.
 - **Replication-noise magnitude is assumed**, not measured — the per-replication values behind the original 129 means were not retained. The replication *count* for the 129 (5 per point) is confirmed; the dashboard growth rounds are single-replication, seed 1.
 - **`tt_ib_lb` in PROVEN_6** benchmarks a standalone Gradient-Boosting model while production registers `stacking` for that KPI — correct for the benchmark, not a drop-in for live prediction. Documented in `proven6.py` and tested.
@@ -892,7 +896,7 @@ The three rounds are the concrete demonstration that the "129 is a small dataset
 
 ### 15.3 Future scope — adding and removing KPIs and input parameters
 
-The growth rounds surfaced a class of question that will recur whenever the KPI set or the input set changes. These are **data-governance items for the extension roadmap, not defects in the delivered system** — the loop caught every one of them before the value was trusted, which is the mechanism working as designed.
+The growth rounds surfaced a class of question that will recur whenever the KPI set or the input set changes. Most are **data-governance items for the extension roadmap** — the loop caught them before the value was trusted, which is the mechanism working as designed. One (the last row) is a genuine defect in the current grown dataset and is carried into Section 16 for remediation.
 
 | Observation | What it means for future KPI/input changes |
 |---|---|
@@ -903,6 +907,7 @@ The growth rounds surfaced a class of question that will recur whenever the KPI 
 | `uti_dafm_r` coverage fell from 92.3% (n=129) to 64.3% (n=139) after the first round. | Each real round can shift a KPI's uncertainty calibration. Run `cli_recalibrate_uq_methods` after each round and treat a large coverage move as a trigger to re-fit that KPI's interval and, if needed, revisit its UQ method with the simulation owner. |
 | `round_20260829_181116` (PROVEN_6) and `round_20260906_103618` (DEMO_4) exported but not yet run. | Rounds can be queued; the manifest tracks `exported_pending_manual_run` → `ingested` so nothing is lost between sessions. |
 | The 89 "constant" AnyLogic fields are the author's well-grounded understanding, not a direct statement from the simulation owner. | Confirm the constant set with the simulation owner before the next design wave; the constants worklist is the single document to check against. |
+| **Defect (mentor finding):** `extended_X_train.parquet` records candidate-proposer values for factors that were never set in the simulation — the 3 no-field percentages (all 50 grown rows) and the 4 ViaRott volumes (round 1's 10 rows). X for those columns does not match what AnyLogic ran. | `dataset_store.append_round` must record only the factors a round actually applied — the manifest already tracks which those are — and null the rest so the per-KPI NaN handling excludes them. The existing grown rows need those columns blanked (or the rounds re-run). See Section 16. |
 
 ### 15.4 Engineering items
 
@@ -916,6 +921,7 @@ The growth rounds surfaced a class of question that will recur whenever the KPI 
 
 Priority order, for the client and any inheriting engineer:
 
+0. **Fix the recorded-but-not-applied inputs in the grown dataset (mentor finding, §15.2) — do this before any load-bearing use of the grown rows.** In `experimenting_ml/data/manual_rounds/extended_X_train.parquet`: blank the 3 no-AnyLogic-field columns (`Pct_NA_OB_Green`, `Pct_NA_OB_Red`, `Pct_A_OB_Red`) across all 50 grown rows, and the 4 ViaRott columns (`NA_Im_LB`, `NA_Ex_LB`, `A_Im_LB`, `A_Ex_LB`) for `round_20260827_161725`'s 10 rows — the per-KPI NaN handling already tolerates the gaps — or re-run those rounds with those factors held at AS-IS. Then change `dataset_store.append_round` to persist only the factors a round actually set (the manifest records which). Retrain and re-check coverage afterwards.
 1. **Adopt the operator console (Section 13) as the standing twice-weekly practice** — dataset status, pending review, build round, ingest, recalibration check are all now a screen; each real round grows the evidence base on the record.
 2. **Promote the uncertainty display and console into the `nolhc_ml` production UI** once the workflow has bedded in — currently delivered in `experimenting_ml`.
 3. **Adopt the batch-sequential loop as standing practice** — each real round grows the evidence base on the record and directly answers the "129 is a small dataset" concern.
