@@ -55,6 +55,7 @@ It is deliberately **reproducibility-first**: each step tells you *what to run* 
 
 ### 1.3 How to use it
 
+- **Just want it running?** From the repo root: `./SETUP.sh` then `./LAUNCH.sh` (Windows: `.\SETUP.ps1`, `.\LAUNCH.ps1`). Read the root `README.md` for the one-page picture.
 - New to the project? Read Sections 2–4, then follow Section 10 on a clean clone.
 - Need to demo it? Section 11.
 - Running the twice-weekly dataset-growth cycle? Section 9, then Section 13 for the operator console that replaces the command line.
@@ -81,7 +82,7 @@ timeline
 
 ### 2.1 Phase 1 — `brexit_ml` (superseded)
 
-The first surrogate, `brexit_ml/`, modelled the Ireland ↔ Great Britain East/West corridor. It was trained on the **completed-runs export of the earlier *Post-Brexit Sector-Based Model*** (`brexit_ml/data/raw/Post-Brexit Sector Based Model - PostBrexit_Model_ML Meta Model - Completed runs-2.xlsx`), using XGBoost regressors behind a FastAPI service and a browser UI.
+The first surrogate, `archive/brexit_ml/` (then at `brexit_ml/`), modelled the Ireland ↔ Great Britain East/West corridor. It was trained on the **completed-runs export of the earlier *Post-Brexit Sector-Based Model*** (`archive/brexit_ml/data/raw/Post-Brexit Sector Based Model …Completed runs-2.xlsx`), using XGBoost regressors behind a FastAPI service and a browser UI.
 
 **Why it was superseded.** That completed-runs set was an ad-hoc accumulation of simulation runs, not a designed experiment: it suffered zero-inflation in several outputs and had no orthogonality guarantees between inputs, which limited how well any surrogate could generalise. When the **129-run Nearly-Orthogonal Latin Hypercube (NOLHC) design** became available in late March — a structured sweep of 35 continuous inputs with column correlations held roughly within ±0.3 — all engine work moved to it. `brexit_ml` is kept in the repository for context and traceability only; it is **not part of the reproducible deliverable** (see Section 15).
 
@@ -109,15 +110,17 @@ By the 6 September freeze, **three AnyLogic Cloud rounds** had been ingested, gr
 
 ## 3. What was delivered — system overview
 
-### 3.1 The three code bases
+### 3.1 One system, two parts
+
+The repository is **one project**. A single top-level entry point sets it up and launches it (`SETUP.sh` / `SETUP.ps1`, then `LAUNCH.sh` / `LAUNCH.ps1` — Section 11); the root `README.md` is the one-page orientation. Underneath, the code is organised in two parts plus an archive:
 
 | Path | What it is | Status |
 |---|---|---|
-| `nolhc_ml/` | Production-style surrogate engine: per-KPI model registry (`v1`), FastAPI inference API (`/predict`), parameter UI | **Authoritative engine** |
-| `experimenting_ml/` | Research pipeline (CV, model selection, statistics, SHAP, conformal) + the uncertainty / novelty / self-extension loop + scenario Decision-Intelligence UI | **Authoritative research and reliability layer** |
-| `brexit_ml/` | Phase 1 Ireland–GB corridor surrogate | **Superseded** — context only |
+| `nolhc_ml/` — **the engine** | The frozen, versioned model: per-KPI registry (`models/v1/`), FastAPI inference API (`/predict`), a simple parameter UI. | **Authoritative engine** |
+| `experimenting_ml/` — **the workbench** | The working layer: the research pipeline that chose the models (CV, selection, statistics, SHAP, conformal), the uncertainty / novelty / trust-score layer, the dataset-growth loop, and **the scenario Decision-Intelligence UI used day to day**. | **Authoritative research and reliability layer** |
+| `archive/brexit_ml/` | Phase 1 Ireland–GB corridor surrogate. | **Superseded** — traceability only, not set up by `SETUP` |
 
-The uncertainty loop in `experimenting_ml/src/loop/` reads the trained engine from `nolhc_ml/models/v1/` and the dataset from `nolhc_ml/data/`. This cross-package dependency is intentional and resolved by path in the code.
+**How the two parts fit together — a feedback loop, not a one-way split.** The engine is the frozen model. The workbench reads it (`experimenting_ml/src/loop/` resolves `nolhc_ml/models/v1/` and `nolhc_ml/data/` by path — an intentional dependency), uses it to screen scenarios, scores each prediction's trust, flags the untrustworthy ones, runs those in AnyLogic, and ingests the results — so its training data grows (129 → 179 → …). When enough new rows have accrued, the engine is retrained on the grown set and shipped as a **new frozen version** (`models/v2/`, `v3/`, …); `v1` is never modified and the API/UI switch to the new version. In short: **the engine is the frozen model; the workbench uses it, grows its training data, and periodically produces the next frozen version.** Section 12.2 has the retrain path; Section 15.2 / Section 16 list the data-quality gates to clear before a `v2` is trained on today's grown rows.
 
 ### 3.2 The problem being solved
 
@@ -162,15 +165,19 @@ Items **A–H** are the Phase 2 platform; items **I–P** are the Phase 3 reliab
 
 ```
 NOLHC-ML-Engine/
-├── nolhc_ml/            # Authoritative engine — registry v1, FastAPI, parameter UI
-├── experimenting_ml/    # Research pipeline + uncertainty loop + scenario UI
-├── brexit_ml/           # Phase 1 (superseded — context only)
+├── README.md            # one-page orientation — read first
+├── SETUP.sh / SETUP.ps1   # one-time: build both environments
+├── LAUNCH.sh / LAUNCH.ps1 # start the primary (scenario) UI
+├── nolhc_ml/            # THE ENGINE — registry v1, FastAPI, parameter UI
+├── experimenting_ml/    # THE WORKBENCH — pipeline + uncertainty loop + scenario UI
 ├── docs/                # Engineering specs, figures, this report, due-diligence report
 ├── REPRODUCE.md         # Clean-clone → running-system checklist
+├── archive/
+│   └── brexit_ml/       # Phase 1 (superseded — traceability only)
 └── .gitignore
 ```
 
-Each code base is **self-contained**: its own `src/`, `data/`, `models/` or `outputs/`, `tests/`, `requirements.txt` and `requirements.lock.txt`, and its own virtual environment.
+Each part is **self-contained**: its own `src/`, `data/`, `models/` or `outputs/`, `tests/`, `requirements.txt` and `requirements.lock.txt`, and its own virtual environment (both Python 3.8.10). `SETUP` builds the two environments; `LAUNCH` opens the scenario UI.
 
 ### 4.2 `nolhc_ml/`
 
@@ -284,12 +291,12 @@ If you are looking at an older clone or archive and see these, ignore them.
 
 ### 5.2 Setup, per code base
 
-Each code base gets its own virtual environment built from its own lock file.
+Each part gets its own virtual environment built from its own lock file. **`SETUP.sh` / `SETUP.ps1` does all of this in one command** (Section 10.1); the steps below are what it runs.
 
 **macOS / Linux (bash / zsh):**
 
 ```bash
-cd nolhc_ml               # then experimenting_ml, then (optionally) brexit_ml
+cd nolhc_ml               # then experimenting_ml  (archive/brexit_ml only if needed)
 python3.8 -m venv .venv
 ./.venv/bin/pip install -r requirements.lock.txt
 ```
@@ -297,7 +304,7 @@ python3.8 -m venv .venv
 **Windows (PowerShell):**
 
 ```powershell
-cd nolhc_ml               # then experimenting_ml, then (optionally) brexit_ml
+cd nolhc_ml               # then experimenting_ml  (archive\brexit_ml only if needed)
 py -3.8 -m venv .venv     # or: python -m venv .venv   (if 3.8 is the only Python)
 .venv\Scripts\pip install -r requirements.lock.txt
 ```
@@ -594,15 +601,19 @@ Until those are closed, the manual procedure in §9.2 is the supported path and 
 
 ### 10.1 Clean clone → running system
 
-`brexit_ml` is **superseded and optional** (§2.1, §5.2) — set it up only if you need to run its archival tests. The two commands below build the two packages that make up the deliverable; append `brexit_ml` to the list if you want the third.
+```bash
+git clone https://github.com/nilashree28-wq/NOLHC-ML-Engine.git
+cd NOLHC-ML-Engine
+./SETUP.sh        # Windows: .\SETUP.ps1   — builds both environments (Python 3.8.10)
+./LAUNCH.sh       # Windows: .\LAUNCH.ps1  — opens the scenario UI
+```
+
+That is the whole setup. `archive/brexit_ml` is **superseded and optional** (§2.1, §5.2) — `SETUP` skips it; set it up by hand only if you need its archival tests. The manual equivalent of `SETUP`:
 
 **macOS / Linux:**
 
 ```bash
-git clone https://github.com/nilashree28-wq/NOLHC-ML-Engine.git
-cd NOLHC-ML-Engine
-
-for pkg in nolhc_ml experimenting_ml; do        # add brexit_ml only if needed
+for pkg in nolhc_ml experimenting_ml; do        # add archive/brexit_ml only if needed
   ( cd $pkg && python3.8 -m venv .venv && ./.venv/bin/pip install -r requirements.lock.txt )
 done
 ```
@@ -610,10 +621,7 @@ done
 **Windows (PowerShell):**
 
 ```powershell
-git clone https://github.com/nilashree28-wq/NOLHC-ML-Engine.git
-cd NOLHC-ML-Engine
-
-foreach ($pkg in 'nolhc_ml','experimenting_ml') {   # add 'brexit_ml' only if needed
+foreach ($pkg in 'nolhc_ml','experimenting_ml') {   # add 'archive\brexit_ml' only if needed
   Push-Location $pkg
   py -3.8 -m venv .venv
   .venv\Scripts\pip install -r requirements.lock.txt
@@ -628,7 +636,7 @@ foreach ($pkg in 'nolhc_ml','experimenting_ml') {   # add 'brexit_ml' only if ne
 ```bash
 cd nolhc_ml         && ./.venv/bin/python -m pytest -q     #   9 passed
 cd experimenting_ml && ./.venv/bin/python -m pytest -q     # 172 passed
-cd brexit_ml        && ./.venv/bin/python -m pytest -q     #  52 passed, 1 skipped   (optional — superseded package)
+cd archive/brexit_ml && ./.venv/bin/python -m pytest -q   #  52 passed, 1 skipped  (optional — superseded)
 ```
 
 **Windows (PowerShell):**
@@ -636,10 +644,10 @@ cd brexit_ml        && ./.venv/bin/python -m pytest -q     #  52 passed, 1 skipp
 ```powershell
 cd nolhc_ml         ; .venv\Scripts\python -m pytest -q    #   9 passed
 cd ..\experimenting_ml ; .venv\Scripts\python -m pytest -q # 172 passed
-cd ..\brexit_ml     ; .venv\Scripts\python -m pytest -q    #  52 passed, 1 skipped   (optional)
+cd ..\archive\brexit_ml ; .venv\Scripts\python -m pytest -q  #  52 passed, 1 skipped  (optional)
 ```
 
-Last verified 6 September 2026, Python 3.8.10, committed lock files. The first two lines are the deliverable; the `brexit_ml` line only applies if you set that optional package up.
+Last verified 6 September 2026, Python 3.8.10, committed lock files. The first two lines are the deliverable; the `archive/brexit_ml` line only applies if you set that optional package up by hand.
 
 ### 10.3 Regenerate the engine and the pipeline
 
@@ -656,7 +664,7 @@ Last verified 6 September 2026, Python 3.8.10, committed lock files. The first t
 
 | Layer | Reproducible? | Notes |
 |---|---|---|
-| All three test suites | **Yes** | On Python 3.8.10 + the lock files |
+| Both test suites (`nolhc_ml` 9, `experimenting_ml` 172; `archive/brexit_ml` 52 optional) | **Yes** | On Python 3.8.10 + the lock files |
 | `nolhc_ml` engine (`train.py`) | **Yes, exactly** on the pinned env | 20/20 winners, mean R², stacking count all identical on re-run (verified 5 Sep) |
 | `experimenting_ml` benchmarking pipeline | **Yes** | Deterministic (seed 42); tree-SHAP deterministic, Kernel-SHAP sampled |
 | Both UIs + `/predict` + `/api/infer` | **Yes** | Verified 6 Sep |
@@ -669,6 +677,8 @@ Last verified 6 September 2026, Python 3.8.10, committed lock files. The first t
 ---
 
 ## 11. Launching the user interfaces from the terminal
+
+**The short version:** `./LAUNCH.sh` (Windows: `.\LAUNCH.ps1`) from the repo root starts the primary UI — the `experimenting_ml` scenario Decision-Intelligence UI — at `http://localhost:8000/UI/index.html`. Nothing else is needed. The sections below are the manual equivalents and the second (raw-surrogate) UI.
 
 ### 11.1 `nolhc_ml` — parameter UI
 
@@ -840,7 +850,7 @@ flowchart LR
 ```bash
 cd nolhc_ml         && ./.venv/bin/python -m pytest -q     #   9 passed
 cd experimenting_ml && ./.venv/bin/python -m pytest -q     # 172 passed
-cd brexit_ml        && ./.venv/bin/python -m pytest -q     #  52 passed, 1 skipped  (optional — superseded)
+cd archive/brexit_ml && ./.venv/bin/python -m pytest -q   #  52 passed, 1 skipped  (optional — superseded)
 ```
 
 `experimenting_ml/pytest.ini` scopes collection to `tests/` (the legacy `src/test_eval.py` is a scratch script, not a test module). Last verified 6 September 2026.
@@ -884,7 +894,7 @@ Full analysis, evaluation tables and the business case are in the BCP report. Th
 | Loop — AnyLogic Cloud rounds ingested | 3 (10 + 30 + 10 rows); 2 more exported and pending |
 | Loop — training set growth on the record | **129 → 179 rows** |
 | Cost baseline being displaced | €2,520 / year AnyLogic Cloud API subscription |
-| Test suites | `nolhc_ml` 9 · `experimenting_ml` 172 · `brexit_ml` 52 (+1 skipped) |
+| Test suites | `nolhc_ml` 9 · `experimenting_ml` 172 · `archive/brexit_ml` 52 (+1 skipped, optional) |
 
 The three rounds are the concrete demonstration that the "129 is a small dataset" concern is *mechanically* answerable — the dataset grows through a repeatable, on-the-record process driven by the engine's own trust score. **How much those particular 50 rows are worth is a separate, live question** (meta-model sourcing, §15.2), and per-KPI growth is very uneven (§15.3).
 
@@ -949,13 +959,17 @@ Priority order, for the client and any inheriting engineer:
 **macOS / Linux:**
 
 ```bash
-# ---- setup (per package) ----
+# ---- one-time setup + launch (from repo root) ----
+./SETUP.sh                                                # builds both environments
+./LAUNCH.sh                                               # opens the scenario UI
+
+# ---- setup, the manual equivalent (per part) ----
 python3.8 -m venv .venv && ./.venv/bin/pip install -r requirements.lock.txt
 
 # ---- tests ----
 cd nolhc_ml         && ./.venv/bin/python -m pytest -q
 cd experimenting_ml && ./.venv/bin/python -m pytest -q
-cd brexit_ml        && ./.venv/bin/python -m pytest -q     # optional — superseded package
+cd archive/brexit_ml && ./.venv/bin/python -m pytest -q   # optional — superseded
 
 # ---- engine ----
 cd nolhc_ml
@@ -987,13 +1001,17 @@ python -m loop.cli_recalibrate_uq_methods
 **Windows (PowerShell):**
 
 ```powershell
-# ---- setup (per package) ----
+# ---- one-time setup + launch (from repo root) ----
+.\SETUP.ps1                                                # builds both environments
+.\LAUNCH.ps1                                               # opens the scenario UI
+
+# ---- setup, the manual equivalent (per part) ----
 py -3.8 -m venv .venv ; .venv\Scripts\pip install -r requirements.lock.txt
 
 # ---- tests ----
 cd nolhc_ml            ; .venv\Scripts\python -m pytest -q
 cd ..\experimenting_ml ; .venv\Scripts\python -m pytest -q
-cd ..\brexit_ml        ; .venv\Scripts\python -m pytest -q   # optional — superseded package
+cd ..\archive\brexit_ml ; .venv\Scripts\python -m pytest -q  # optional — superseded
 
 # ---- engine ----
 cd nolhc_ml
@@ -1054,6 +1072,7 @@ Categories: agri transit / waiting times; non-agri waiting times; landbridge and
 
 | Artifact | Location | Open it when… |
 |---|---|---|
+| One-page orientation + entry point | `README.md`, `SETUP.sh`/`SETUP.ps1`, `LAUNCH.sh`/`LAUNCH.ps1` (repo root) | first opening the project |
 | This report | `docs/NOLHC_ML_Engine_Technical_Report.md` in the repo; a PDF and a `.docx` are generated from it and handed over separately (not committed) | — |
 | Clean-clone checklist | `REPRODUCE.md` | first setting the project up |
 | Phase 3 engineering spec + open-questions log | `experimenting_ml/docs/spec.md` | working on the uncertainty loop |

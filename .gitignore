@@ -38,10 +38,10 @@ catboost_info/
 # Empty AnyLogic export scratch dirs
 Output [0-9]*/
 
-# brexit_ml is superseded Phase 1 - keep source, ignore data + regenerable artifacts
-brexit_ml/data/raw/*.xlsx
-brexit_ml/data/processed/*.parquet
-brexit_ml/models/
+# archive/brexit_ml is superseded Phase 1 - keep source, ignore data + regenerable artifacts
+archive/brexit_ml/data/raw/*.xlsx
+archive/brexit_ml/data/processed/*.parquet
+archive/brexit_ml/models/
 
 # Stale handoff snapshots (retained in git history + on GitHub, archived off-repo 2026-09-05)
 *.zip

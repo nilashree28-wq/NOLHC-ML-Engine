@@ -11,11 +11,13 @@ services. A prose walkthrough for a new analyst is in
 
 ## 0. Layout
 
+**One project, two parts.** `./SETUP.sh` (Windows `.\SETUP.ps1`) builds both environments; `./LAUNCH.sh` (`.\LAUNCH.ps1`) starts the primary UI. Root `README.md` is the one-page picture.
+
 | Path | What it is | Status |
 |---|---|---|
-| `nolhc_ml/` | Production-style surrogate engine: per-KPI model registry (`v1`), FastAPI inference API, parameter UI | **Authoritative engine** |
-| `experimenting_ml/` | Research pipeline (CV, model selection, stats, SHAP, conformal) + the uncertainty / novelty / self-extension loop + scenario Decision-Intelligence UI | **Authoritative research + reliability layer** |
-| `brexit_ml/` | Phase 1 IRE↔GB corridor surrogate, trained on the earlier *Post-Brexit Sector-Based Model* completed-runs export | **Superseded** — kept for context; not part of the reproducible deliverable (see §6) |
+| `nolhc_ml/` — the engine | Frozen, versioned model: per-KPI registry (`models/v1/`), FastAPI inference API, parameter UI | **Authoritative engine** |
+| `experimenting_ml/` — the workbench | Research pipeline (CV, selection, stats, SHAP, conformal) + the uncertainty / novelty / self-extension loop + the scenario Decision-Intelligence UI (primary) | **Authoritative research + reliability layer** |
+| `archive/brexit_ml/` | Phase 1 IRE↔GB corridor surrogate, trained on the earlier *Post-Brexit Sector-Based Model* completed-runs export | **Superseded** — traceability only, not part of the deliverable (see §6); `SETUP` skips it |
 | `docs/` | Engineering specs, figures, due-diligence report, this report | reference |
 
 The uncertainty loop in `experimenting_ml/src/loop/` reads the trained engine
@@ -26,7 +28,7 @@ cross-package dependency is intentional and resolved by path in code.
 
 ## 1. Prerequisites
 
-* **Python 3.8.10** — one interpreter for all three packages. (Earlier docs said
+* **Python 3.8.10** — one interpreter for both parts (and the optional archive). (Earlier docs said
   `nolhc_ml` needs 3.10+; this is not the case — it installs and tests clean on
   3.8.10.)
 * macOS/Linux. On Apple Silicon, `brew install libomp` if XGBoost import fails.
@@ -39,7 +41,7 @@ cross-package dependency is intentional and resolved by path in code.
 
 ```bash
 # one package at a time — macOS / Linux
-cd nolhc_ml           # then experimenting_ml, then (optionally) brexit_ml
+cd nolhc_ml           # then experimenting_ml   (archive/brexit_ml only if needed)
 python3.8 -m venv .venv
 ./.venv/bin/pip install -r requirements.lock.txt
 ```
@@ -62,7 +64,7 @@ Throughout this file the commands are written for macOS / Linux; on Windows repl
 ```bash
 cd nolhc_ml        && ./.venv/bin/python -m pytest -q     #   9 passed
 cd experimenting_ml && ./.venv/bin/python -m pytest -q    # 172 passed  (pytest.ini scopes to tests/)
-cd brexit_ml       && ./.venv/bin/python -m pytest -q     #  52 passed, 1 skipped  (optional — superseded)
+cd archive/brexit_ml && ./.venv/bin/python -m pytest -q  #  52 passed, 1 skipped  (optional — superseded)
 ```
 
 Last verified: 2026-09-06, Python 3.8.10, the committed lock files.
@@ -203,7 +205,7 @@ workbooks above are the format reference and the field/constant mapping.
 | Item | Why | What exists instead |
 |---|---|---|
 | The AnyLogic *Post-Brexit Sector-Based Model* simulation | Proprietary AnyLogic; the `.alp` model file is not in the repo; AnyLogic Cloud API is a paid subscription | The 129-run export (`nolhc_runs.xlsx`) and every manual-round result CSV |
-| `brexit_ml` end-to-end | Its exact training workbook is not verified in-repo; superseded by the NOLHC engine | Code + tests run; treat as archival |
+| `archive/brexit_ml` end-to-end | Its exact training workbook is not verified in-repo; superseded by the NOLHC engine | Code + tests run; treat as archival |
 | Live LLM narration (`experimenting_ml/src/llm_attribution/`) | Needs an LLM API key; responses are non-deterministic | The schema, personas, and a golden snapshot |
 | `UQ_Method_Benchmark.xlsx` coverage numbers | The benchmark-selection script was never committed | The workbook is committed as evidence; the *chosen* per-family UQ methods are enforced and tested in `loop/proven6.py` + `tests/test_proven6.py`; the UQ estimators themselves are fully tested (`tests/test_uq_estimators.py`). See `experimenting_ml/reports/README.md`. |
 | Exact XGBoost/LightGBM/CatBoost predictions | Boosting libraries are not bit-stable across builds/versions | Deterministic to library-version tolerance with the lock file |
@@ -214,7 +216,7 @@ workbooks above are the format reference and the field/constant mapping.
 
 > All code, tests, and the full modelling methodology reproduce from a clean
 > clone on the committed Python 3.8.10 lock files (verified 2026-09-06:
-> nolhc_ml 9 tests, experimenting_ml 172, brexit_ml 52; both UIs and the loop
+> nolhc_ml 9 tests, experimenting_ml 172 (archive/brexit_ml 52 optional); both UIs and the loop
 > CLIs live; `train.py` regenerated all 20/20 per-KPI winners exactly). Trained
 > artifacts and the grown 179-row training set are committed for immediate use.
 > The AnyLogic simulation and live-LLM narration require their external services.
