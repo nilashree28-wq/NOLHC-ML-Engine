@@ -455,7 +455,7 @@ The generic dispatcher (`uq/dispatch.py`) takes a list of KPI slugs and routes e
 
 ### 8.2 Novelty / out-of-distribution scoring
 
-`loop/novelty.py` fits an `IsolationForest` on the 35-dimensional training hull and scores how unlike the training data a new input vector is. A documented finding (spec.md §7 item 7): at 35 dimensions the scorer **does not react to a single extreme input** — one outlier dimension is diluted across 34 ordinary ones — but **does react to genuine multi-dimensional excursions**. This is a structural property of the method at this dimensionality and is reported, not worked around.
+`loop/novelty.py` fits an `IsolationForest` on the 35-dimensional training hull and scores how unlike the training data a new input vector is. A documented finding (spec.md §7 item 7): at 35 dimensions the scorer responds to **how many** of the 35 inputs are anomalous, not how far any one of them sits from the hull. The reproducible probe `experimenting_ml/run_novelty_probe.py` (writes `outputs/novelty_probe_table.csv`) shows this cleanly: the in-sample 90th-percentile threshold is ≈ 0.027; **a single factor pushed to even 100× its observed max scores exactly 0** (0 of 35 factors flagged either high or low); pushing *m* factors together crosses the threshold at **m ≈ 9** and saturates at ≈ 0.158 for all 35 — and the score barely changes between a 1.5× and a 5× push at any *m*. This is a structural property of axis-aligned isolation at this dimensionality; it is reported, not worked around, and the trust score pairs novelty with per-KPI interval width so a lone extreme (which novelty misses) is still caught.
 
 ### 8.3 The trust score
 
@@ -890,7 +890,7 @@ Full analysis, evaluation tables and the business case are in the BCP report. Th
 | Engine — `train.py` reproducibility on the pinned environment | 20/20 winners, mean R² and stacking count identical on re-run |
 | UQ — dispatch paths validated in depth (DEMO_4) | 4 KPIs, one per path + a known-bad stress test |
 | UQ — per-estimator-type method fixed with held-out evidence (PROVEN_6) | 6 KPIs; bootstrap-ensemble method lost for every type |
-| Novelty — behaviour at d = 35 | responds to multi-dimensional excursions, not single-input ones (measured both ways) |
+| Novelty — behaviour at d = 35 | responds to the *count* of anomalous inputs, not magnitude; threshold ≈ 0.027, single-factor push = 0.000 at any scale, crossover at ≈ 9 factors, saturates ≈ 0.158 (`run_novelty_probe.py`) |
 | Loop — AnyLogic Cloud rounds ingested | 3 (10 + 30 + 10 rows); 2 more exported and pending |
 | Loop — training set growth on the record | **129 → 179 rows** |
 | Cost baseline being displaced | €2,520 / year AnyLogic Cloud API subscription |
