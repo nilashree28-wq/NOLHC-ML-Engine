@@ -74,7 +74,7 @@ timeline
     Mar to Apr 2026 : experimenting_ml research pipeline (CV, model selection, statistics) : nolhc_ml engine and model registry v1 : Parameter UI, scenario Decision-Intelligence UI, governance
     May to Jun 2026 : SHAP explainability layer and XAI crosswalk : LLM persona-attribution layer : Paper scaffold
     Jul 2026 : Due-diligence report : Public GitHub repository
-    Aug 2026 : Uncertainty phase - SOTA review, 3-path UQ dispatch, novelty scorer, unified trust score : Synthetic and manual DES backends, dataset store, batch-sequential loop : PROVEN_6 per-family UQ-method benchmark
+    Aug 2026 : Uncertainty phase - SOTA review, 3-path UQ dispatch, novelty scorer, unified trust score : Synthetic and manual DES backends, dataset store, batch-sequential loop : PROVEN_6 per-model-type UQ-method benchmark
     Aug to Sep 2026 : Scenario UI updated - conformal intervals and trust strip on the KPI cards : Operator console added under Settings - dataset status, pending review, build round, ingest, recalibration : Optional loop wiring so the UI degrades gracefully
     Sep 2026 : Three AnyLogic Cloud rounds ingested, 129 to 179 rows : Results validation and recalibration check : Worklist integer-field fix, landbridge-to-ViaRott mapping correction : Browser-automation prototype for AnyLogic Cloud (metamodel dashboard) : v0 development freeze
 ```
@@ -100,7 +100,7 @@ The engine could predict fast but could not say **when to trust a prediction**, 
 - a **novelty / out-of-distribution scorer** on the 35-dimensional input hull;
 - a single **trust score** combining UQ width and novelty, with a per-KPI "accept the ML prediction / refer to AnyLogic" decision;
 - a **batch-sequential loop**: propose candidate scenarios → score them → flag the untrustworthy ones → export a worklist → run them in AnyLogic → ingest the results → append to the training set → retrain → recalibrate;
-- **PROVEN_6**, a per-model-family benchmark that fixes one UQ method per family with empirical evidence;
+- **PROVEN_6**, a per-model-type benchmark that fixes one UQ method per registered estimator type with empirical evidence;
 - **the scenario UI updated** (August–September) so the reliability signal is visible where decisions are made: conformal intervals and a trust strip on the KPI cards, and an **operator console** under Settings that runs the dataset-growth loop as a screen (Section 13). The additions are purely additive — the existing screening flow, governance layer and endpoints are untouched.
 
 By the 6 September freeze, **three AnyLogic Cloud rounds** had been ingested, growing the training set from **129 to 179 rows** on the record. (One caveat surfaced late and is disclosed in Section 15.2: the AnyLogic Cloud *dashboard* route used for the September rounds runs a trained meta-model of the simulation, not the full discrete-event model — whether meta-model-sourced points belong in this project's own surrogate training set is an open question for the mentor.)
@@ -125,32 +125,34 @@ The AnyLogic discrete-event simulation of post-Brexit RoRo freight can answer ro
 
 The surrogate replaces the simulation for **early scenario screening**: from **35 continuous inputs** it predicts **20 operational KPIs** (transit times, waiting times, staff utilisations) in milliseconds, in a browser, with SHAP explanations and — after Phase 3 — an explicit trust signal telling the user when to fall back to the real simulation.
 
+**The point simulated is not always the point requested.** The NOLHC design treats all 35 inputs as continuous, and the surrogate is trained and queried on continuous values. But **27 of the 35 are Integer-typed in AnyLogic Cloud** (volumes, staff and shed counts, vessel capacities, check-time minutes — everything except the 8 percentage / fraction factors), so the manual-round worklist rounds each of them to the nearest whole number before entry (§8.5, §9.2). AnyLogic therefore runs a point up to ±0.5 away from the requested value in each of those 27 dimensions. For the large-range factors (volumes in the hundreds of thousands, capacities and check-times in the tens) that shift is well under 1 % of the factor's swept range. It bites for the **small-count factors**: `NumCusShed_R` is swept over 1.5–2.5, so *every* value rounds to 2 — the factor stops varying at all for a rounded round; `NumCusShed_D` (swept 3–5) moves by up to 25 % of its range, `NumDAFM_R` (11.25–18.75) by up to ~7 %. The original 129 design rows carry the same fractional values; whether they were rounded when first run in AnyLogic is not on record.
+
 ### 3.3 Runtime architecture
 
 ```mermaid
 flowchart TD
-    A["AnyLogic NOLHC workbook<br/>(ExpValues: 35 inputs · SimResults: 20 KPIs)"] --> B["data_loader.py<br/>validate · assemble"]
-    B --> C["Processed parquet<br/>X_train / Y_train + training_medians"]
-    C --> D["Per-KPI benchmarking<br/>19 models · 6 families · 5-fold CV<br/>hyperparameter tuning · paired t-tests · Friedman/Nemenyi"]
-    D --> E["Model registry v1<br/>registry.json + model_*.pkl + stack_*.pkl + scaler_X.pkl"]
-    E --> F["Inference API<br/>nolhc_ml /predict  ·  experimenting_ml /api/infer"]
-    F --> G["Browser UIs<br/>parameter UI · scenario Decision-Intelligence UI"]
-    E --> H["SHAP layer<br/>per-KPI importances · beeswarm/bar/waterfall · XAI crosswalk"]
+    A["A · AnyLogic NOLHC workbook<br/>(ExpValues: 35 inputs · SimResults: 20 KPIs)"] --> B["B · data_loader.py<br/>validate · assemble"]
+    B --> C["C · Processed parquet<br/>X_train / Y_train + training_medians"]
+    C --> D["D · Per-KPI benchmarking<br/>19 models · 6 families · 5-fold CV<br/>hyperparameter tuning · paired t-tests · Friedman/Nemenyi"]
+    D --> E["E · Model registry v1<br/>registry.json + model_*.pkl + stack_*.pkl + scaler_X.pkl"]
+    E --> F["F · Inference API<br/>nolhc_ml /predict  ·  experimenting_ml /api/infer"]
+    F --> G["G · Browser UIs<br/>parameter UI · scenario Decision-Intelligence UI"]
+    E --> H["H · SHAP layer<br/>per-KPI importances · beeswarm/bar/waterfall · XAI crosswalk"]
     H --> G
-    E --> I["UQ dispatch<br/>bagged-tree jackknife · GPR-native · conformal fallback"]
-    C --> J["Novelty scorer<br/>IsolationForest on the 35-dim hull"]
-    I --> K["Trust score<br/>UQ width + novelty → accept ML / refer to AnyLogic"]
+    E --> I["I · UQ dispatch<br/>bagged-tree jackknife · GPR-native · conformal fallback"]
+    C --> J["J · Novelty scorer<br/>IsolationForest on the 35-dim hull"]
+    I --> K["K · Trust score<br/>UQ width + novelty → accept ML / refer to AnyLogic"]
     J --> K
-    K --> L["Batch-sequential loop<br/>propose → score → flag → export worklist"]
-    L --> M["Manual AnyLogic Cloud round<br/>(human enters fields, runs replications)"]
-    M --> N["Ingest + validate results<br/>results_validation.py"]
-    N --> O["dataset_store.py<br/>append-only: extended_X/Y_train.parquet + manifest"]
+    K --> L["L · Batch-sequential loop<br/>propose → score → flag → export worklist"]
+    L --> M["M · Manual AnyLogic Cloud round<br/>(human enters fields, runs replications)"]
+    M --> N["N · Ingest + validate results<br/>results_validation.py"]
+    N --> O["O · dataset_store.py<br/>append-only: extended_X/Y_train.parquet + manifest"]
     O --> C
-    O --> P["Retrain loop estimators<br/>recalibrate UQ · recalibration_check.py"]
+    O --> P["P · Retrain loop estimators<br/>recalibrate UQ · recalibration_check.py"]
     P --> K
 ```
 
-Items A–H are the Phase 2 platform; items I–P are the Phase 3 reliability and growth layer. Everything to the right of the registry is additive — it does not change how the engine predicts, only how much you can rely on the prediction and how the evidence base grows.
+Items **A–H** are the Phase 2 platform; items **I–P** are the Phase 3 reliability and growth layer. Everything to the right of the registry is additive — it does not change how the engine predicts, only how much you can rely on the prediction and how the evidence base grows.
 
 ---
 
@@ -230,7 +232,7 @@ experimenting_ml/
 │       ├── trust.py            # UQ + novelty → per-KPI threshold → decide()
 │       ├── novelty.py          # IsolationForest OOD scorer on the 35-dim hull
 │       ├── kpi_scope.py        # DEMO_4 / PROVEN_6 / all20 scoping
-│       ├── proven6.py          # per-family UQ-method winners (see reports/)
+│       ├── proven6.py          # per-estimator-type UQ-method winners (see reports/)
 │       ├── dataset_store.py    # append-only training-set growth + rounds manifest
 │       ├── results_validation.py       # sanity warnings on ingested AnyLogic results
 │       ├── recalibration_check.py      # is each PROVEN_6 method still best on the grown data?
@@ -347,9 +349,9 @@ Add a lockfile-based container image (`Dockerfile` pinning Python 3.8.10 + the t
 |---|---|---|
 | **Source workbook** (immutable) | `nolhc_ml/data/raw/nolhc_runs.xlsx` | Sheets `ExpValues` (35 inputs) and `SimResults` (20 KPIs), each with three header rows; data from row 4. Tracked. |
 | **Processed matrices** | `nolhc_ml/data/processed/X_train.parquet`, `Y_train.parquet` | 129×35 and 129×20. Regenerated by `data_loader.py`. Tracked. |
-| **Grown training set** | `experimenting_ml/data/manual_rounds/extended_X_train.parquet`, `extended_Y_train.parquet` | Rows added by real AnyLogic rounds (40 rows as of the freeze). The original 129 are **never modified**. |
+| **Grown training set** | `experimenting_ml/data/manual_rounds/extended_X_train.parquet`, `extended_Y_train.parquet` | **50 rows** added by AnyLogic Cloud rounds (10 + 30 + 10), so **179 in total** (§8.8, §15.1). The original 129 are **never modified**. |
 
-`experimenting_ml/src/loop/dataset_store.py::load_current_training_data()` transparently returns **the original 129 plus every ingested round**, so nothing downstream needs to know how many rounds have happened.
+`experimenting_ml/src/loop/dataset_store.py::load_current_training_data()` transparently returns **the original 129 plus every ingested round** (129 + 50 = 179 at the freeze), so nothing downstream needs to know how many rounds have happened.
 
 ### 6.2 The column contract
 
@@ -386,7 +388,7 @@ Each stage below lists the file(s), the command, and the kind of artifact it pro
 - **Commands:** `python run_mentor_step2.py` then `python run_step3_pre_conformal.py`
 - **What happens:** models are compared per KPI on a **composite score** — 40% CV stability (mean + std of CV RMSE), 40% hold-out performance (RMSE / MAE / R²), 20% count of statistically significant pairwise wins. Significance comes from **171 paired t-tests per KPI** on the CV fold RMSEs, backed by **Friedman + Nemenyi** post-hoc tests and **critical-difference diagrams**. Learning curves and residual diagnostics are generated for the shortlist. In `nolhc_ml`, a **stacking ensemble** of the top base learners is also fitted and registered instead of the single model where it wins.
 - **Produces:** `outputs/pipeline_results.xlsx`, `outputs/model_stability_by_target.xlsx`, `outputs/step2/` (CD diagrams, learning curves, residual plots), `outputs/step3/` (calibration curves, hyperparameter-sensitivity plots).
-- **The authoritative record** of what was chosen per KPI is `nolhc_ml/models/v1/registry.json` — its `registered_as` field for each KPI. Stacking won 8 of 20 KPIs; the mean CV R² across all 20 is 0.74.
+- **The authoritative record** of what was chosen per KPI is `nolhc_ml/models/v1/registry.json` — its `registered_as` field for each KPI. Stacking won 8 of 20 KPIs; the mean CV R² across all 20 is **0.7357** (see §15.1 for the headline figures).
 
 ### 7.4 SHAP explainability
 
@@ -452,9 +454,9 @@ The generic dispatcher (`uq/dispatch.py`) takes a list of KPI slugs and routes e
 
 `loop/trust.py` combines the normalised UQ interval width and the novelty score into a single per-prediction trust score, compares it to a **per-KPI threshold** (calibrated as that KPI's 90th percentile of trust scores on the training data), and returns a decision: **accept the ML prediction**, or **refer this scenario to AnyLogic**.
 
-### 8.4 PROVEN_6 — one UQ method fixed per model family
+### 8.4 PROVEN_6 — one UQ method fixed per registered estimator type
 
-`reports/UQ_Method_Benchmark.xlsx` records a benchmark of three candidate UQ methods across six model families (Gaussian process, Extra Trees, ElasticNet, Lasso, SVR, Gradient Boosting) on held-out data, with 95% Wilson-score confidence intervals on every coverage number. One method is fixed per family with evidence; the winners are enforced in `loop/proven6.py` and tested in `tests/test_proven6.py`. A cross-cutting finding: a hand-rolled bootstrap-ensemble method lost in every family, badly overconfident throughout.
+`reports/UQ_Method_Benchmark.xlsx` records a benchmark of three candidate UQ methods across the **six estimator types that are registered as the winner for a PROVEN_6 KPI** — Gaussian process, Extra Trees, ElasticNet, Lasso, SVR, Gradient Boosting — on held-out data, with 95% Wilson-score confidence intervals on every coverage number. These six are individual `scikit-learn` estimators, **not** the six taxonomic model families of §7.2 (ElasticNet and Lasso both sit under "penalised linear" there). One UQ method is fixed per estimator type with evidence; the winners are enforced in `loop/proven6.py` and tested in `tests/test_proven6.py`. A cross-cutting finding: a hand-rolled bootstrap-ensemble method lost for every estimator type, badly overconfident throughout.
 
 **Reproducibility note.** The script that *ran* that selection benchmark was never committed; the workbook is retained as evidence and the *decisions* it produced are enforced and tested in code. `experimenting_ml/reports/README.md` documents exactly which parts are test-covered and which are result-only. The lighter `recalibration_check.py` (below) *is* committed and tested.
 
@@ -468,14 +470,14 @@ The generic dispatcher (`uq/dispatch.py`) takes a list of KPI slugs and routes e
 
 The replication **count** for the original 129 runs is confirmed (5 per point); the replication **noise magnitude** is a documented placeholder (`0.15 × CV-RMSE`), because the per-replication values behind the 129 means were not retained. The September growth rounds entered through the AnyLogic Cloud dashboard came back with **`seed = 1`, a single replication** (spec.md §7 item 22) — a further reason the meta-model-sourcing question in Section 15.2 needs resolving before those rows carry weight.
 
-`manual_worklist.py` writes the worklist with AnyLogic's own field types respected: **27 of the 35 factors are Integer-typed** in AnyLogic Cloud (volumes, staff counts, vessel capacities, check-time minutes) and are rounded to whole numbers; only the 8 percentage / fraction factors keep a decimal value. Before this fix (spec.md §7 item 20) every factor was written as a raw float, which AnyLogic's manual-entry form rejects outright.
+`manual_worklist.py` writes the worklist with AnyLogic's own field types respected: the 27 Integer-typed factors are rounded to whole numbers, only the 8 percentage / fraction factors keep a decimal. Before this fix (spec.md §7 item 20) every factor was written as a raw float, which AnyLogic's manual-entry form rejects outright. The consequence — that the simulated point differs from the requested point, and by how much for the small-count factors — is stated once in §3.2.
 
 ### 8.6 The batch-sequential loop
 
 `loop/loop.py` orchestrates: `propose_and_flag` → `export_manual_round` → (manual AnyLogic) → `ingest_manual_round` → append via `dataset_store` → retrain the round's estimators → recalibrate. `kpi_scope.py` defines three scopes:
 
 - **DEMO_4** — one KPI per dispatch path plus a known-bad stress test (`tt_ib_dr`, R² ≈ −0.12); the depth-validated set.
-- **PROVEN_6** — the six KPIs with a benchmarked per-family UQ method.
+- **PROVEN_6** — the six KPIs whose registered estimator type has a benchmarked UQ method.
 - **all20** — every registered KPI, routed generically.
 
 ### 8.7 Results validation and recalibration (September additions)
@@ -540,7 +542,7 @@ Use `--kpi-scope proven6` to run against the PROVEN_6 benchmarked methods instea
 
 Two corrections landed on 6 September (spec.md §7 items 20 and 23) and are baked into the generator:
 
-- **Integer fields.** 27 of the 35 factors are Integer-typed in AnyLogic Cloud; the worksheet now rounds them to whole numbers. Only the 8 percentage / fraction factors carry a decimal. Older worksheets wrote raw floats, which AnyLogic's entry form rejects.
+- **Integer fields.** The 27 Integer-typed factors are rounded to whole numbers in the worksheet; only the 8 percentage / fraction factors carry a decimal. Older worksheets wrote raw floats, which AnyLogic's entry form rejects. See §3.2 for what this rounding costs (small-count factors like `NumCusShed_R` stop varying).
 - **Four factors were mis-labelled "no AnyLogic field".** `NA_Im_LB`, `NA_Ex_LB`, `A_Im_LB`, `A_Ex_LB` in fact map to the Rotterdam-direct volume fields `VolAllPImViaRott` / `VolAllPExViaRott` / `VolAgriImViaRott` / `VolAgriExViaRott` — confirmed against the live dashboard. Only **3 factors** genuinely have no AnyLogic field now: `Pct_NA_OB_Green`, `Pct_NA_OB_Red`, `Pct_A_OB_Red`. Rounds entered by hand before this date skipped those four — see Section 15.3.
 
 **Important:** the 3 no-field factors are *not entered* into AnyLogic, but the worklist and the stored training row still carry the proposer's value for them. That mismatch is a known defect in the grown dataset — see Section 15.2 and Section 16, item 0.
@@ -592,13 +594,15 @@ Until those are closed, the manual procedure in §9.2 is the supported path and 
 
 ### 10.1 Clean clone → running system
 
+`brexit_ml` is **superseded and optional** (§2.1, §5.2) — set it up only if you need to run its archival tests. The two commands below build the two packages that make up the deliverable; append `brexit_ml` to the list if you want the third.
+
 **macOS / Linux:**
 
 ```bash
 git clone https://github.com/nilashree28-wq/NOLHC-ML-Engine.git
 cd NOLHC-ML-Engine
 
-for pkg in nolhc_ml experimenting_ml brexit_ml; do
+for pkg in nolhc_ml experimenting_ml; do        # add brexit_ml only if needed
   ( cd $pkg && python3.8 -m venv .venv && ./.venv/bin/pip install -r requirements.lock.txt )
 done
 ```
@@ -609,7 +613,7 @@ done
 git clone https://github.com/nilashree28-wq/NOLHC-ML-Engine.git
 cd NOLHC-ML-Engine
 
-foreach ($pkg in 'nolhc_ml','experimenting_ml','brexit_ml') {
+foreach ($pkg in 'nolhc_ml','experimenting_ml') {   # add 'brexit_ml' only if needed
   Push-Location $pkg
   py -3.8 -m venv .venv
   .venv\Scripts\pip install -r requirements.lock.txt
@@ -624,7 +628,7 @@ foreach ($pkg in 'nolhc_ml','experimenting_ml','brexit_ml') {
 ```bash
 cd nolhc_ml         && ./.venv/bin/python -m pytest -q     #   9 passed
 cd experimenting_ml && ./.venv/bin/python -m pytest -q     # 172 passed
-cd brexit_ml        && ./.venv/bin/python -m pytest -q     #  52 passed, 1 skipped
+cd brexit_ml        && ./.venv/bin/python -m pytest -q     #  52 passed, 1 skipped   (optional — superseded package)
 ```
 
 **Windows (PowerShell):**
@@ -632,10 +636,10 @@ cd brexit_ml        && ./.venv/bin/python -m pytest -q     #  52 passed, 1 skipp
 ```powershell
 cd nolhc_ml         ; .venv\Scripts\python -m pytest -q    #   9 passed
 cd ..\experimenting_ml ; .venv\Scripts\python -m pytest -q # 172 passed
-cd ..\brexit_ml     ; .venv\Scripts\python -m pytest -q    #  52 passed, 1 skipped
+cd ..\brexit_ml     ; .venv\Scripts\python -m pytest -q    #  52 passed, 1 skipped   (optional)
 ```
 
-Last verified 6 September 2026, Python 3.8.10, committed lock files.
+Last verified 6 September 2026, Python 3.8.10, committed lock files. The first two lines are the deliverable; the `brexit_ml` line only applies if you set that optional package up.
 
 ### 10.3 Regenerate the engine and the pipeline
 
@@ -716,9 +720,11 @@ Endpoints: `POST /api/infer`, `POST /api/predict`, `GET /api/health`, `GET /api/
 - **Editable / locked / derived matrix:** each family locks some input groups (e.g. Direct Route locks trade-volume controls), keeps others editable within training-feasible slider bounds, and derives the rest for internal consistency. The full 35-vector is always sent to the API so all 20 KPIs are predicted.
 - The `UI/*.xlsx` files (scenario mapping, dynamic-parameter tables) are **config data read by the server** — leave them in `UI/`.
 
-### 11.4 Which UI to demo
+### 11.4 Which UI is primary
 
-The `nolhc_ml` parameter UI is the simpler, more direct demonstration of the surrogate. The `experimenting_ml` scenario UI is the richer, governance-aware surface and the natural home for the operator console in Section 13. Standardise on one as the "primary demo" and label it as such.
+**The `experimenting_ml` scenario Decision-Intelligence UI is the primary UI.** It carries the governance layer, the uncertainty display, and the operator console (Section 13), and it is where all Phase 3 work lands. The `nolhc_ml` parameter UI is retained as the simpler, direct demonstration of the raw surrogate and as the FastAPI reference implementation, but it is not the surface to develop against.
+
+**Consolidation onto the primary UI** — folding the parameter UI's remaining unique value into the scenario UI and retiring the duplicate — is owned by **the report author and Sakshi Dhamane**, target decision **30 September 2026** (§16).
 
 ---
 
@@ -773,7 +779,7 @@ Backend (`run_ui_inference_api.py`):
 - `/api/infer` and `/api/predict` return a `reliability` block: `{ decision, reason, novelty:{score,threshold,is_novel}, per_kpi:{…}, low_confidence_kpis:[…] }`.
 - `_build_simulator_payload` carries `interval` and `coverage_level` per KPI.
 
-This is a **lightweight live screen**; the rigorous per-family methodology is PROVEN_6 in the batch loop (§8.4). The two share one trust criterion, as the design intended (`spec.md` §5.1).
+This is a **lightweight live screen**; the rigorous per-estimator-type methodology is PROVEN_6 in the batch loop (§8.4). The two share one trust criterion, as the design intended (`spec.md` §5.1).
 
 ### 13.2 Part B — the operator console (backend-operator surface)
 
@@ -834,7 +840,7 @@ flowchart LR
 ```bash
 cd nolhc_ml         && ./.venv/bin/python -m pytest -q     #   9 passed
 cd experimenting_ml && ./.venv/bin/python -m pytest -q     # 172 passed
-cd brexit_ml        && ./.venv/bin/python -m pytest -q     #  52 passed, 1 skipped
+cd brexit_ml        && ./.venv/bin/python -m pytest -q     #  52 passed, 1 skipped  (optional — superseded)
 ```
 
 `experimenting_ml/pytest.ini` scopes collection to `tests/` (the legacy `src/test_eval.py` is a scratch script, not a test module). Last verified 6 September 2026.
@@ -869,11 +875,11 @@ Full analysis, evaluation tables and the business case are in the BCP report. Th
 
 | Result | Value |
 |---|---|
-| Engine — mean cross-validated R² across all 20 KPIs | 0.74 |
+| Engine — mean cross-validated R² across all 20 KPIs | **0.7357** (≈ 0.74) |
 | Engine — stacking ensembles registered as the per-KPI winner | 8 of 20 |
 | Engine — `train.py` reproducibility on the pinned environment | 20/20 winners, mean R² and stacking count identical on re-run |
 | UQ — dispatch paths validated in depth (DEMO_4) | 4 KPIs, one per path + a known-bad stress test |
-| UQ — per-family method fixed with held-out evidence (PROVEN_6) | 6 KPIs; bootstrap-ensemble method lost in every family |
+| UQ — per-estimator-type method fixed with held-out evidence (PROVEN_6) | 6 KPIs; bootstrap-ensemble method lost for every type |
 | Novelty — behaviour at d = 35 | responds to multi-dimensional excursions, not single-input ones (measured both ways) |
 | Loop — AnyLogic Cloud rounds ingested | 3 (10 + 30 + 10 rows); 2 more exported and pending |
 | Loop — training set growth on the record | **129 → 179 rows** |
@@ -890,7 +896,7 @@ The three rounds are the concrete demonstration that the "129 is a small dataset
 - **Weak KPIs, disclosed.** `TT_IB_DR` (negative R²), `WT_IB_NA_Ross` (very low R²), `TT_OB_DR` (fragile). `TT_IB_DR` is kept in DEMO_4 deliberately, as a low-trust stress test — the trust score correctly reads it as unreliable.
 - **Replication-noise magnitude is assumed**, not measured — the per-replication values behind the original 129 means were not retained. The replication *count* for the 129 (5 per point) is confirmed; the dashboard growth rounds are single-replication, seed 1.
 - **`tt_ib_lb` in PROVEN_6** benchmarks a standalone Gradient-Boosting model while production registers `stacking` for that KPI — correct for the benchmark, not a drop-in for live prediction. Documented in `proven6.py` and tested.
-- **Deep evidence covers 10 of 20 KPIs** (DEMO_4 + PROVEN_6). The other 10 are served by the generic registry-driven dispatch but do not yet have a dedicated per-family benchmark.
+- **Deep evidence covers 10 of 20 KPIs** (DEMO_4 + PROVEN_6). The other 10 are served by the generic registry-driven dispatch but do not yet have a dedicated per-estimator-type benchmark.
 - **Candidate proposer is a v0 placeholder** — uniform-random within each factor's observed range, not diversity- or uncertainty-directed.
 - **`brexit_ml`** — its exact training workbook is not verified in-repo; the code base is archival.
 
@@ -911,7 +917,7 @@ The growth rounds surfaced a class of question that will recur whenever the KPI 
 
 ### 15.4 Engineering items
 
-- The uncertainty display and the operator console (Section 13) are delivered in `experimenting_ml`; promotion into the `nolhc_ml` production UI is a later decision.
+- The uncertainty display and the operator console (Section 13) are delivered in the `experimenting_ml` scenario UI, which is the primary UI (§11.4). The `nolhc_ml` parameter UI does not carry them and is not planned to.
 - The environment is pinned by lock file but not yet containerised.
 - A browser-automation prototype for AnyLogic Cloud (§9.4) exists (Sakshi Dhamane) and has produced one round, but is not committed, not integrated, and its dashboard route runs a meta-model rather than the DES — an open question before its data is relied on.
 
@@ -923,16 +929,16 @@ Priority order, for the client and any inheriting engineer:
 
 0. **Fix the recorded-but-not-applied inputs in the grown dataset (mentor finding, §15.2) — do this before any load-bearing use of the grown rows.** In `experimenting_ml/data/manual_rounds/extended_X_train.parquet`: blank the 3 no-AnyLogic-field columns (`Pct_NA_OB_Green`, `Pct_NA_OB_Red`, `Pct_A_OB_Red`) across all 50 grown rows, and the 4 ViaRott columns (`NA_Im_LB`, `NA_Ex_LB`, `A_Im_LB`, `A_Ex_LB`) for `round_20260827_161725`'s 10 rows — the per-KPI NaN handling already tolerates the gaps — or re-run those rounds with those factors held at AS-IS. Then change `dataset_store.append_round` to persist only the factors a round actually set (the manifest records which). Retrain and re-check coverage afterwards.
 1. **Adopt the operator console (Section 13) as the standing twice-weekly practice** — dataset status, pending review, build round, ingest, recalibration check are all now a screen; each real round grows the evidence base on the record.
-2. **Promote the uncertainty display and console into the `nolhc_ml` production UI** once the workflow has bedded in — currently delivered in `experimenting_ml`.
+2. **Treat the `experimenting_ml` scenario UI as primary (§11.4)** and develop against it; keep the `nolhc_ml` parameter UI as the raw-surrogate demo and FastAPI reference only.
 3. **Adopt the batch-sequential loop as standing practice** — each real round grows the evidence base on the record and directly answers the "129 is a small dataset" concern.
 4. **Run `cli_recalibrate_uq_methods` after every round** and act on large coverage moves — re-fit the affected KPI's interval, and revisit its UQ method with the simulation owner if the move persists. The `uti_dafm_r` 92.3% → 64.3% drop (§15.3) is the worked example: treat it as a recalibration trigger, not a one-off.
 5. **Confirm the KPI ↔ AnyLogic mappings and the constant set** with the simulation owner before the next design wave, and give both a documented owner (§15.3).
-6. **Lock the per-family UQ methods** from PROVEN_6 into production; `tt_ob_lb` currently flags for review on the grown data.
+6. **Lock the per-estimator-type UQ methods** from PROVEN_6 into production; `tt_ob_lb` currently flags for review on the grown data.
 7. **Add input-range governance** so the UI cannot silently extrapolate outside the training hull.
 8. **Replace the v0 candidate proposer** with diversity- / uncertainty-directed batch selection.
 9. **Resolve the meta-model-vs-DES question (§9.4, §15.2), then integrate the browser-automation prototype** — confirm with the mentor whether dashboard-meta-model rows are acceptable training data; if so, wire the prototype in as a third DES backend behind the existing interface, with credentials only from an untracked secrets file, and extend its KPI coverage past the current 4.
 10. **Freeze the environment** with a container image built from the three lock files.
-11. **Consolidate to one authoritative UI**, and roadmap the DEMO_4 / PROVEN_6 depth of evidence out to all 20 KPIs.
+11. **Consolidate onto the `experimenting_ml` scenario UI** (the primary, §11.4) and retire the `nolhc_ml` parameter UI once its unique value is folded in — owner: **the report author and Sakshi Dhamane**, target decision **30 September 2026**. Separately, roadmap the DEMO_4 / PROVEN_6 depth of evidence out to all 20 KPIs.
 
 ---
 
@@ -949,7 +955,7 @@ python3.8 -m venv .venv && ./.venv/bin/pip install -r requirements.lock.txt
 # ---- tests ----
 cd nolhc_ml         && ./.venv/bin/python -m pytest -q
 cd experimenting_ml && ./.venv/bin/python -m pytest -q
-cd brexit_ml        && ./.venv/bin/python -m pytest -q
+cd brexit_ml        && ./.venv/bin/python -m pytest -q     # optional — superseded package
 
 # ---- engine ----
 cd nolhc_ml
@@ -987,7 +993,7 @@ py -3.8 -m venv .venv ; .venv\Scripts\pip install -r requirements.lock.txt
 # ---- tests ----
 cd nolhc_ml            ; .venv\Scripts\python -m pytest -q
 cd ..\experimenting_ml ; .venv\Scripts\python -m pytest -q
-cd ..\brexit_ml        ; .venv\Scripts\python -m pytest -q
+cd ..\brexit_ml        ; .venv\Scripts\python -m pytest -q   # optional — superseded package
 
 # ---- engine ----
 cd nolhc_ml
@@ -1048,7 +1054,7 @@ Categories: agri transit / waiting times; non-agri waiting times; landbridge and
 
 | Artifact | Location | Open it when… |
 |---|---|---|
-| This report (Markdown / PDF / HTML) | `docs/NOLHC_ML_Engine_Technical_Report.*` | — |
+| This report | `docs/NOLHC_ML_Engine_Technical_Report.md` in the repo; a PDF and a `.docx` are generated from it and handed over separately (not committed) | — |
 | Clean-clone checklist | `REPRODUCE.md` | first setting the project up |
 | Phase 3 engineering spec + open-questions log | `experimenting_ml/docs/spec.md` | working on the uncertainty loop |
 | Benchmarking pipeline spec | `experimenting_ml/docs/ML_Pipeline_Specification.md` | re-running or modifying the CV / selection pipeline |

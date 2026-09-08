@@ -62,7 +62,7 @@ Throughout this file the commands are written for macOS / Linux; on Windows repl
 ```bash
 cd nolhc_ml        && ./.venv/bin/python -m pytest -q     #   9 passed
 cd experimenting_ml && ./.venv/bin/python -m pytest -q    # 172 passed  (pytest.ini scopes to tests/)
-cd brexit_ml       && ./.venv/bin/python -m pytest -q     #  52 passed, 1 skipped
+cd brexit_ml       && ./.venv/bin/python -m pytest -q     #  52 passed, 1 skipped  (optional — superseded)
 ```
 
 Last verified: 2026-09-06, Python 3.8.10, the committed lock files.
